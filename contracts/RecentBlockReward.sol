@@ -40,7 +40,10 @@ contract RecentBlockReward is BlockReward {
 		require(lastClaimedIssuanceBlock < issuanceBlock);
 		uint divisor = (issuanceBlock / halvingEvery) + 1;
 		uint blockReward = maxReward / divisor;
-		uint multiplier = issuanceBlock - lastClaimedIssuanceBlock;
+		uint multiplier = 1;
+		if (lastClaimedIssuanceBlock > 0) {
+			multiplier = issuanceBlock - lastClaimedIssuanceBlock;
+		}
 		uint totalReward = multiplier * blockReward;
 		require(totalReward > 0);
 		lastClaimedIssuanceBlock = issuanceBlock;

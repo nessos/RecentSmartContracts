@@ -7,7 +7,7 @@ contract('RecentBlockReward', (accounts) => {
         console.log(response[0][0]);
         console.log(web3.utils.fromWei(response[1][0],'ether'));
         // Write an assertion below to check the return value of ResponseMessage.
-        assert.equal('something', 'something', 'A correctness property about ResponseMessage of HelloBlockchain');
+        assert.equal(web3.utils.fromWei(response[1][0],'ether'), 10, 'Valid reward');
     });
 
     
