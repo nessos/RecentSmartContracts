@@ -7,6 +7,7 @@ contract PaymentChannel {
 using SafeMath for uint256;
 
   struct Channel {
+    bytes32 id;
     address sender;
     address recipient;
     uint lockUntil;
@@ -41,27 +42,17 @@ using SafeMath for uint256;
   {
     require(msg.value > 0);
     require(recipient != msg.sender);
-
-    
-
     Channel memory newChannel;
+    userChannels[msg.sender][numberOfUserChannels[msg.sender]] = newChannel;
+    numberOfUserChannels[msg.sender] += 1;
+    newChannel.id = keccak256(abi.encode(msg.sender, recipient, numberOfUserChannels[msg.sender])); 
     newChannel.balance += msg.value;
     newChannel.sender = msg.sender;
     newChannel.recipient = recipient;
     newChannel.isOpen = true;
     newChannel.lockUntil = now + lockTimeInDays * 1 days;
-
-    userChannels[msg.sender][numberOfUserChannels[msg.sender]] = newChannel;
-    numberOfUserChannels[msg.sender] += 1;
-    
-    // create a channel with the id being a hash of the data
-    bytes32 id = keccak256(abi.encode(msg.sender, recipient, numberOfUserChannels[msg.sender]));
-
-    // add it to storage and lookup
-    channels[id] = newChannel;
- 
-
-    emit ChannelOpened(id, msg.sender, recipient, msg.value);
+    channels[newChannel.id] = newChannel;
+    emit ChannelOpened(newChannel.id, msg.sender, recipient, msg.value);
   }
 
 /**
