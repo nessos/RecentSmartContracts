@@ -17,7 +17,7 @@ using SafeMath for uint256;
 
 
     mapping (bytes32=>mapping(uint=>bool)) noncePaid;
-    mapping (address=>mapping(uint=>Channel)) userChannels;
+    mapping (address=>mapping(uint=>bytes32)) userChannels;
     mapping (bytes32=>Channel) channels;
     mapping (address=>uint) numberOfUserChannels;
 
@@ -43,9 +43,10 @@ using SafeMath for uint256;
     require(msg.value > 0);
     require(recipient != msg.sender);
     Channel memory newChannel;
-    userChannels[msg.sender][numberOfUserChannels[msg.sender]] = newChannel;
+    newChannel.id = keccak256(abi.encode(msg.sender, recipient, now)); 
+    userChannels[msg.sender][numberOfUserChannels[msg.sender]] = newChannel.id;
     numberOfUserChannels[msg.sender] += 1;
-    newChannel.id = keccak256(abi.encode(msg.sender, recipient, numberOfUserChannels[msg.sender])); 
+    
     newChannel.balance += msg.value;
     newChannel.sender = msg.sender;
     newChannel.recipient = recipient;
@@ -67,8 +68,6 @@ using SafeMath for uint256;
 
     channels[id].balance += msg.value;
     channels[id].lockUntil = channels[id].lockUntil + increaseLckTimeInDays * 1 days;
-
-    //userChannels[msg.sender][numberOfUserChannels[msg.sender]] = channels[id];
     emit DepositToChannel(id, msg.sender, msg.value);
   }
 
