@@ -71,4 +71,12 @@ using SafeMath for uint256;
     emit DepositToChannel(id, msg.sender, msg.value);
   }
 
+  function getChannelId (uint userChannelId) public view returns (bytes32) {
+    return userChannels[msg.sender][userChannelId];
+  }
+
+  function getUserTotalChannels () public view returns (uint) {
+    return numberOfUserChannels[msg.sender];
+  }
+
 }

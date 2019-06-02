@@ -43,7 +43,7 @@ contract UserProfile {
         * Rate Provider
     */
     function rateProvider(address user, uint rating) public {
-        require(rating > 0 && rating < 500, "Rating should be greater than zero and lower than 500");
+        require(rating > 0 && rating <= 500, "Rating should be greater than zero and lower than 500");
         if (providerVotes[msg.sender][user] == 0 ) {
             users[msg.sender].contentProviderRatingTotalPoints += rating;
             users[msg.sender].contentProviderVotes += 1;     
@@ -58,7 +58,7 @@ contract UserProfile {
         * Rate Consumer
     */
     function rateConsumer(address user, uint rating) public {
-        require(rating > 0 && rating < 500, "Rating should be greater than zero and lower than 500");
+        require(rating > 0 && rating <= 500, "Rating should be greater than zero and lower than 500");
         if (consumerVotes[msg.sender][user] == 0 ) {
             users[msg.sender].contentConsumerRatingTotalPoints += rating;
             users[msg.sender].contentConsumerVotes += 1;     
