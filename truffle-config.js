@@ -6,9 +6,9 @@ module.exports = {
   // to customize your Truffle configuration!
   networks: {
     development: {
-      host: "127.0.0.1",     // Localhost (default: none)
-      port: 9545,            // Standard Ethereum port (default: none)
-      network_id: "*",       // Any network (default: none)
+      network_id: "*",
+      host: 'localhost',
+      port: 8545
     },
     recent: {
       provider: () => new HDWalletProvider("combine close before lawsuit asthma glimpse yard debate mixture stool adjust ride", "http://127.0.0.1:8545"),
@@ -24,12 +24,14 @@ module.exports = {
     // timeout: 100000
   },
   // Configure your compilers
-  solc: {
-    version: "0.5.8",
-    settings: {
-      optimizer: {
-        enabled: true, 
-        runs: 200    
+  compilers: {
+    solc: {
+      version : "0.5.8",
+      settings: {
+        optimizer: {
+          enabled: true, 
+          runs: 200    
+        }
       }
     }
   }
