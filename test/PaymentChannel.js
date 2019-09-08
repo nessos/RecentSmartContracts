@@ -1,12 +1,12 @@
-const PaymentChannel = artifacts.require("PaymentChannel");
-contract('PaymentChannel', (accounts) => {
+const PaymentChannels = artifacts.require("PaymentChannels");
+contract('PaymentChannels', (accounts) => {
     var smartContractAddress = '0xbf9F727726BDa3fd56874a2CC04A998e3f0AB6Af'; // Existing address
     function getTestContract() {
-      return PaymentChannel.at(smartContractAddress);
+      return PaymentChannels.at(smartContractAddress);
     }
     it('testing channel creation', async () => {
-        //const PaymentChannelInstance = await PaymentChannel.deployed();
-        const PaymentChannelInstance = await getTestContract();
+        const PaymentChannelInstance = await PaymentChannels.deployed();
+        //const PaymentChannelInstance = await getTestContract();
         console.log(PaymentChannelInstance.address);
         var numberOfUserChannels = await PaymentChannelInstance.getUserTotalChannels({from: accounts[0] });
         console.log(numberOfUserChannels);

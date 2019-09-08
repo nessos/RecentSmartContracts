@@ -2,7 +2,7 @@ pragma solidity ^0.5.0;
 
 import "./SafeMath.sol";
 
-contract PaymentChannel {
+contract PaymentChannels {
 
 bytes private prefix = "\x19RecentOT Signed Message:\n32";  
 
@@ -48,7 +48,7 @@ using SafeMath for uint256;
     require(msg.value > 0);
     require(recipient != msg.sender);
     Channel memory newChannel;
-    newChannel.id = keccak256(abi.encode(msg.sender, recipient, now)); 
+    newChannel.id = keccak256(abi.encodePacked(msg.sender, recipient, now)); 
     userChannels[msg.sender][numberOfUserChannels[msg.sender]] = newChannel.id;
     numberOfUserChannels[msg.sender] += 1;
     
@@ -102,7 +102,7 @@ using SafeMath for uint256;
 		bytes32 nonce,
 		uint256 amount) public
   {
-    bytes32 proof = keccak256(abi.encode(channelId, nonce, amount));
+    bytes32 proof = keccak256(abi.encodePacked(channelId, nonce, amount));
     bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
     require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
     address signer = ecrecover(h, v, r, s);
@@ -137,8 +137,10 @@ using SafeMath for uint256;
     uint totalVotes;
   }
 
-  uint relayersCounter = 0;
-  mapping (bytes32=>Relayer) relayer;
+  uint public relayersCounter = 0;
+
+  mapping (uint=>bytes32) public relayerIds;
+  mapping (bytes32=>Relayer) public relayers;
 
   mapping (address => mapping (bytes32 => uint)) public userVotesForRelayer;
 
@@ -151,20 +153,29 @@ using SafeMath for uint256;
   // Notifies for Relayer voted
   event RelayerVoted(bytes32 indexed id, address indexed user, uint rating);
 
+
+  function testHashing(bytes32 id, string memory domain) public pure returns (bool,bytes32,bytes32)
+    {
+      bytes32 lid = keccak256(abi.encodePacked(domain));
+      return (lid==id, id, lid );
+    }
+
+
   /**
      * Add a new Relayer
   */
   function addRelayer(string memory domain, bytes32 name, bool isActive, uint fee) public
   {
-    bytes32 id = keccak256(abi.encode(domain));
-    require(relayer[id].owner == address(0), "Already registered Relayer domain");
+    bytes32 id = keccak256(abi.encodePacked(domain));
+    require(relayers[id].owner == address(0), "Already registered Relayer domain");
     require(fee < 1000, "Fee should be lower than 1000");
-    relayer[id].name = name;
-    relayer[id].domain = domain;
-    relayer[id].isActive = isActive;
-    relayer[id].owner = msg.sender;
-    relayer[id].fee = fee;
+    relayers[id].name = name;
+    relayers[id].domain = domain;
+    relayers[id].isActive = isActive;
+    relayers[id].owner = msg.sender;
+    relayers[id].fee = fee;
     relayersCounter++;
+    relayerIds[relayersCounter] = id;
     emit RelayerAdded(id, domain, msg.sender, name, fee, isActive);
     
   }
@@ -174,12 +185,12 @@ using SafeMath for uint256;
   */
   function updateRelayer(bytes32 id, bytes32 name, uint fee, bool isActive) public
   {
-    require(relayer[id].owner != address(0), "Relayer not found");
-    require(relayer[id].owner == msg.sender, "You are not the owner of Relayer");
+    require(relayers[id].owner != address(0), "Relayer not found");
+    require(relayers[id].owner == msg.sender, "You are not the owner of Relayer");
     require(fee < 1000, "Fee should be lower than 1000");
-    relayer[id].name = name;
-    relayer[id].isActive = isActive;
-    relayer[id].fee = fee;
+    relayers[id].name = name;
+    relayers[id].isActive = isActive;
+    relayers[id].fee = fee;
     emit RelayerUpdated(id, name, fee, isActive);
   }
 
@@ -191,11 +202,11 @@ using SafeMath for uint256;
     require(rating > 0 && rating <= 500, "Rating should be greater than zero and lower than 500");
     require(userDepositOnRelayer[msg.sender][id].lockUntil > 0, "User has never transacted to this relayer");
     if (userVotesForRelayer[msg.sender][id] == 0 ) {
-        relayer[id].totalPoints += rating;
-        relayer[id].totalVotes += 1;     
+        relayers[id].totalPoints += rating;
+        relayers[id].totalVotes += 1;     
     } else {
-        relayer[id].totalPoints += rating;
-        relayer[id].totalPoints -= userVotesForRelayer[msg.sender][id];        
+        relayers[id].totalPoints += rating;
+        relayers[id].totalPoints -= userVotesForRelayer[msg.sender][id];        
     }
     userVotesForRelayer[msg.sender][id] = rating;
     emit RelayerVoted(id, msg.sender, rating);
@@ -206,8 +217,8 @@ using SafeMath for uint256;
   */
   function getRelayerRating(bytes32 id) public view returns(uint relayerRating) {
       uint rating = 0;
-      if (relayer[id].totalVotes > 0) {
-          rating = relayer[id].totalPoints / relayer[id].totalVotes;
+      if (relayers[id].totalVotes > 0) {
+          rating = relayers[id].totalPoints / relayers[id].totalVotes;
       }
       return (rating);
   }
@@ -239,7 +250,7 @@ using SafeMath for uint256;
   function depositToRelayer(bytes32 id, uint lockTimeInDays) public payable
   {
     require(lockTimeInDays > 0, "The lockTimeInDays should be greater than zero");
-    require(relayer[id].isActive, "Relayer not existed or inactive");
+    require(relayers[id].isActive, "Relayer not exists or inactive");
     userDepositOnRelayer[msg.sender][id].lockUntil = now + lockTimeInDays * 1 days;
     userDepositOnRelayer[msg.sender][id].balance += msg.value;
     emit UserDeposit(id, msg.sender, msg.value);
@@ -269,8 +280,8 @@ using SafeMath for uint256;
     address payable beneficiary,
 		uint256 amount) public
   {
-    require(relayer[relayerId].owner == msg.sender, "Relayer doesn't match with message signer");
-    bytes32 proof = keccak256(abi.encode(relayerId, beneficiary, nonce, amount));
+    require(relayers[relayerId].owner == msg.sender, "Relayer doesn't match with message signer");
+    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount));
     bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
     require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
     address signer = ecrecover(h, v, r, s);
@@ -279,10 +290,10 @@ using SafeMath for uint256;
     userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce] = amount; 
     require(userDepositOnRelayer[signer][relayerId].balance >= amountToBeTransferred, "Insufficient balance");
     userDepositOnRelayer[signer][relayerId].balance -= amountToBeTransferred;
-    uint256 relayerFee = amountToBeTransferred.mulByFraction(relayer[relayerId].fee, 1000);
+    uint256 relayerFee = amountToBeTransferred.mulByFraction(relayers[relayerId].fee, 1000);
 
     beneficiary.transfer(amountToBeTransferred - relayerFee);
-    relayer[relayerId].owner.transfer(relayerFee);
+    relayers[relayerId].owner.transfer(relayerFee);
     emit RelayedOffChainTransaction(relayerId, signer, beneficiary, relayerFee, amountToBeTransferred, signer==beneficiary);   
   }
 

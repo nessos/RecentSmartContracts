@@ -1,8 +1,8 @@
 var RecentBlockReward = artifacts.require("RecentBlockReward");
 var UserProfile = artifacts.require("UserProfile");
-var PaymentChannel = artifacts.require("PaymentChannel");
+var PaymentChannels = artifacts.require("PaymentChannels");
 module.exports = function(deployer, network, accounts) {
     deployer.deploy(RecentBlockReward, accounts[0]);
     deployer.deploy(UserProfile);
-    deployer.deploy(PaymentChannel);
+    deployer.deploy(PaymentChannels);
 };
