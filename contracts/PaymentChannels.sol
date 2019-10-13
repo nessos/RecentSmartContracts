@@ -4,7 +4,7 @@ import "./SafeMath.sol";
 
 contract PaymentChannels {
 
-bytes private prefix = "\x19RecentOT Signed Message:\n32";  
+bytes private prefix = "\x19Re-CentT Signed Message:\n32";  
 
 using SafeMath for uint256;
 
@@ -162,7 +162,7 @@ using SafeMath for uint256;
 
 
   /**
-     * Add a new Relayer
+     * Add Relayer
   */
   function addRelayer(string memory domain, bytes32 name, bool isActive, uint fee) public
   {
@@ -181,7 +181,7 @@ using SafeMath for uint256;
   }
 
   /**
-     * Update a new Relayer
+     * Update Relayer
   */
   function updateRelayer(bytes32 id, bytes32 name, uint fee, bool isActive) public
   {
@@ -213,7 +213,7 @@ using SafeMath for uint256;
   }
 
   /**
-      * Get user Rating
+      * Get Relayer Rating
   */
   function getRelayerRating(bytes32 id) public view returns(uint relayerRating) {
       uint rating = 0;
