@@ -1,8 +1,9 @@
 pragma solidity ^0.5.0;
 
 import "./SafeMath.sol";
+import "./RecentBlockchain.sol";
 
-contract PaymentChannels {
+contract PaymentChannels is RecentBlockchain {
 
 bytes private prefix = "\x19Re-CentT Signed Message:\n32";  
 
@@ -127,35 +128,114 @@ using SafeMath for uint256;
 
   //Relayers
   struct Relayer {
-    bytes32 name;
+    string name;
     address payable owner;
     string domain;
-    bool isActive;
-    //Thousand percent
+
+    uint maxUsers;
+    uint maxCoins;
+    uint maxTxThroughput;
+    uint offchainTxDelay;
+
+
+
+    //Thousands percent
     uint fee;
-    uint totalPoints;     
-    uint totalVotes;
   }
 
-  uint public relayersCounter = 0;
+  //Per epoch
+  mapping(uint=>uint) public relayersCounter ;
 
-  mapping (uint=>bytes32) public relayerIds;
-  mapping (bytes32=>Relayer) public relayers;
+  mapping(uint=>mapping (address=>Relayer)) public epochRelayers;
 
-  mapping (address => mapping (bytes32 => uint)) public userVotesForRelayer;
+  mapping(uint=>mapping (uint=>Relayer)) public epochRelayersByIndex;
+
+  mapping (address=>Relayer) public relayers;
+
+  mapping (address=>uint) public currentRelayerUsers;
+
+  mapping (address=>uint256) public currentRelayerCoins;
+
+  mapping (address=>uint) public currentRelayerTxThroughput;
+
+  mapping (uint=>mapping (address=>uint256)) public relayerDepositPerEpoch;
 
   // Notifies for a new Relayer
-  event RelayerAdded(bytes32 indexed id, string indexed domain, address indexed owner, bytes32 name, uint fee, bool isActive);
+  event RelayerAdded(address indexed relayer, string  domain, address indexed owner, string name, uint fee);
+
+  // Notifies for a new Relayer as candidate
+  event RelayerProposed(address indexed relayer, string  domain, address indexed owner, uint indexed epoch, string name, uint fee);
 
   // Notifies for Relayer updated
-  event RelayerUpdated(bytes32 indexed id, bytes32 name, uint fee, bool isActive);
+  event RelayerUpdated(address indexed relayer, string  domain, string name, uint fee);
 
-  // Notifies for Relayer voted
-  event RelayerVoted(bytes32 indexed id, address indexed user, uint rating);
+  // Notifies for Relayer withdrawal of penalty funds
+  event RelayerWithdrawFunds(address indexed relayer, uint epoch, uint256 amount);
+
+  /**
+     * Relayer as candidate
+  */
+  function requestRelayerLicense(string memory domain, string memory name, uint fee, uint maxUsers, uint maxCoins, uint maxTxThroughput, uint offchainTxDelay) public payable {
+    
+    uint targetEpoch = getTargetEpoch();
+    require(targetEpoch > 1, "Canditates allowed after epoch 1");
+    require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
+    require(epochRelayers[targetEpoch][msg.sender].owner == address(0), "Already registered Relayer as candidate");
+    uint256 requiredAmount = getFundRequiredForRelayer(maxUsers, maxCoins, maxTxThroughput);
+    require(requiredAmount <= msg.value,"Invalid required amount");
+    
+    
+    require(fee < 1000, "Fee should be lower than 1000");
+
+    uint currentRelayersNumber = relayersCounter[targetEpoch];
+    Relayer storage relayer = relayers[msg.sender];
+    relayer.name = name;
+    relayer. domain = domain;
+    relayer.owner = msg.sender;
+    relayer.fee = fee;
+    relayer.maxUsers = maxUsers;
+    relayer.maxCoins = maxCoins;
+    relayer.maxTxThroughput = maxTxThroughput;
+    relayer.offchainTxDelay = offchainTxDelay;
 
 
-  function testHashing(bytes32 id, string memory domain) public pure returns (bool,bytes32,bytes32)
-    {
+    if (currentRelayersNumber >= maximumRelayersNumber) {
+      address toBeReplacedRelayer = address(0);
+      uint toBeReplacedRelayerIndex = 0;
+      for (uint i=0; i<currentRelayersNumber; i++) {
+        address relayerSelected = epochRelayersByIndex[targetEpoch][i].owner;
+        
+        if (relayerDepositPerEpoch[targetEpoch][relayerSelected] < msg.value) {
+          toBeReplacedRelayer = relayerSelected;
+          toBeReplacedRelayerIndex = i;
+          break;
+        } 
+      }
+
+      if (toBeReplacedRelayer==address(0)) {
+        revert("Relayers list is full");
+      }
+      epochRelayers[targetEpoch][toBeReplacedRelayer] = relayer;
+      epochRelayersByIndex[targetEpoch][toBeReplacedRelayerIndex]  = relayer;
+
+    } else {
+
+      epochRelayers[targetEpoch][msg.sender] = relayer;
+      epochRelayersByIndex[targetEpoch][relayersCounter[targetEpoch]] = relayer;
+      relayersCounter[targetEpoch]++;
+    }
+
+    
+
+
+
+    relayers[msg.sender] = relayer;
+    relayerDepositPerEpoch[targetEpoch][msg.sender] += msg.value;
+
+    emit RelayerProposed(msg.sender, domain, msg.sender, targetEpoch, name, fee);    
+  }
+
+  function testHashing(bytes32 id, string memory domain) public pure returns (bool,bytes32,bytes32) {
       bytes32 lid = keccak256(abi.encodePacked(domain));
       return (lid==id, id, lid );
     }
@@ -164,108 +244,140 @@ using SafeMath for uint256;
   /**
      * Add Relayer
   */
-  function addRelayer(string memory domain, bytes32 name, bool isActive, uint fee) public
-  {
-    bytes32 id = keccak256(abi.encodePacked(domain));
-    require(relayers[id].owner == address(0), "Already registered Relayer domain");
-    require(fee < 1000, "Fee should be lower than 1000");
-    relayers[id].name = name;
-    relayers[id].domain = domain;
-    relayers[id].isActive = isActive;
-    relayers[id].owner = msg.sender;
-    relayers[id].fee = fee;
-    relayersCounter++;
-    relayerIds[relayersCounter] = id;
-    emit RelayerAdded(id, domain, msg.sender, name, fee, isActive);
+  function addRelayer(string memory domain, string memory name, uint fee, uint maxUsers, uint maxCoins, uint maxTxThroughput, uint offchainTxDelay) public payable {
     
+    uint256 requiredAmount = getFundRequiredForRelayer(maxUsers, maxCoins, maxTxThroughput);
+    require(requiredAmount <= msg.value,"Invalid required amount");
+    uint targetEpoch = getTargetEpoch();
+    Relayer storage relayer = relayers[msg.sender];
+
+    require(relayersCounter[targetEpoch] < maximumRelayersNumber,"Relayers list is full");
+    require(targetEpoch == 1,"AddRelayer is allowed only on 1st epoch");
+    require(relayer.owner == address(0), "Already registered Relayer");
+    require(fee < 1000, "Fee should be lower than 1000");
+
+    
+    relayer.name = name;
+    relayer. domain = domain;
+    relayer.owner = msg.sender;
+    relayer.fee = fee;
+    relayer.maxUsers = maxUsers;
+    relayer.maxCoins = maxCoins;
+    relayer.maxTxThroughput = maxTxThroughput;
+    relayer.offchainTxDelay = offchainTxDelay;
+
+    epochRelayers[targetEpoch][msg.sender] = relayer;
+    relayers[msg.sender] = relayer;
+    epochRelayersByIndex[targetEpoch][relayersCounter[targetEpoch]] = relayer;
+    relayersCounter[targetEpoch]++;
+
+    relayerDepositPerEpoch[targetEpoch][msg.sender] += msg.value;
+
+    emit RelayerAdded(msg.sender, domain, msg.sender, name, fee);    
   }
+
+
+  
+
 
   /**
      * Update Relayer
   */
-  function updateRelayer(bytes32 id, bytes32 name, uint fee, bool isActive) public
-  {
-    require(relayers[id].owner != address(0), "Relayer not found");
-    require(relayers[id].owner == msg.sender, "You are not the owner of Relayer");
+  function updateRelayer(string memory domain, string memory name, uint fee) public {
+    Relayer storage relayer = relayers[msg.sender];
+    require(relayer.owner != address(0), "Relayer not found");
     require(fee < 1000, "Fee should be lower than 1000");
-    relayers[id].name = name;
-    relayers[id].isActive = isActive;
-    relayers[id].fee = fee;
-    emit RelayerUpdated(id, name, fee, isActive);
+    relayer.domain = domain;
+    relayer.name = name;
+    relayer.fee = fee;
+    emit RelayerUpdated(msg.sender, domain, name, fee);
   }
 
+  
   /**
-     * vote Relayer
+     * withdraw from Relayer
   */
-  function voteRelayer(bytes32 id, uint rating) public
+  function relayerWithdrawPenaltyFunds(address relayerId, uint epoch) public
   {
-    require(rating > 0 && rating <= 500, "Rating should be greater than zero and lower than 500");
-    require(userDepositOnRelayer[msg.sender][id].lockUntil > 0, "User has never transacted to this relayer");
-    if (userVotesForRelayer[msg.sender][id] == 0 ) {
-        relayers[id].totalPoints += rating;
-        relayers[id].totalVotes += 1;     
-    } else {
-        relayers[id].totalPoints += rating;
-        relayers[id].totalPoints -= userVotesForRelayer[msg.sender][id];        
-    }
-    userVotesForRelayer[msg.sender][id] = rating;
-    emit RelayerVoted(id, msg.sender, rating);
-  }
+    uint currentEpoch = getCurrentEpoch();
+    require(epoch < currentEpoch, "Current epoch should be lower than requested epoch");
 
-  /**
-      * Get Relayer Rating
-  */
-  function getRelayerRating(bytes32 id) public view returns(uint relayerRating) {
-      uint rating = 0;
-      if (relayers[id].totalVotes > 0) {
-          rating = relayers[id].totalPoints / relayers[id].totalVotes;
-      }
-      return (rating);
+    uint256 remainingAmount = relayerDepositPerEpoch[epoch][msg.sender];
+    require(remainingAmount > 0, "Insufficient balance");
+    
+    Relayer storage relayer = relayers[relayerId];
+    require(relayer.owner != address(0), "Relayer not found");
+
+    relayerDepositPerEpoch[epoch][msg.sender] = 0;
+
+    msg.sender.transfer(remainingAmount);
+    emit RelayerWithdrawFunds(msg.sender, epoch, remainingAmount);   
   }
+  
 
 
   //Relayer Deposits
   struct DepositOnRelayer {
-    uint lockUntil;
+    uint lockUntilBlock;
     uint256 balance;
   }
 
-  mapping (address => mapping (bytes32 => DepositOnRelayer)) public userDepositOnRelayer;
+  mapping (address => mapping (address => DepositOnRelayer)) public userDepositOnRelayer;
 
   // Per user => beneficiary => nonce finalized amount 
   mapping (address => mapping (address => mapping (bytes32 => uint256))) public userToBeneficiaryFinalizedAmountForNonce;
 
   // Notifies for user deposit on Relayer
-  event UserDeposit(bytes32 indexed id, address indexed user, uint256 amount);
+  event UserDeposit(address indexed relayer, address indexed user, uint256 amount);
 
   // Notifies for user withdraw on Relayer
-  event UserWithdraw(bytes32 indexed id, address indexed user, uint256 amount);
+  event UserWithdraw(address indexed relayer, address indexed user, uint256 amount);
 
   // Notifies for Off-chain transaction finalized
-  event RelayedOffChainTransaction(bytes32 indexed id, address indexed user, address indexed beneficiary, uint256 relayerFee, uint256 beneficiaryAmount, bool isWithdraw);
+  event RelayedOffChainTransaction(address indexed relayer, address indexed user, address indexed beneficiary, uint256 relayerFee, uint256 beneficiaryAmount, bool isWithdraw);
 
   /**
      * deposit to Relayer
   */
-  function depositToRelayer(bytes32 id, uint lockTimeInDays) public payable
+  function depositToRelayer(address relayerId, uint lockUntilBlock) public payable
   {
-    require(lockTimeInDays > 0, "The lockTimeInDays should be greater than zero");
-    require(relayers[id].isActive, "Relayer not exists or inactive");
-    userDepositOnRelayer[msg.sender][id].lockUntil = now + lockTimeInDays * 1 days;
-    userDepositOnRelayer[msg.sender][id].balance += msg.value;
-    emit UserDeposit(id, msg.sender, msg.value);
+    
+    uint currentEpoch = getCurrentEpoch();
+    Relayer storage relayer = epochRelayers[currentEpoch][relayerId];
+    require(msg.value > 0, "Deposit amount should be greater then 0");
+    require(lockUntilBlock > block.number, "The lockTimeInDays should be greater than zero");
+    require(relayer.owner != address(0), "Relayer not found");
+    userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock = lockUntilBlock;
+    if (userDepositOnRelayer[msg.sender][relayerId].balance > 0) {
+      currentRelayerUsers[relayerId] += 1;
+    }
+
+    require(currentRelayerUsers[relayerId] <= relayer.maxUsers, "Max users limit violated");
+
+    currentRelayerCoins[relayerId] += msg.value;
+
+    require(currentRelayerCoins[relayerId] <= relayer.maxCoins, "Max coins limit violated");
+    userDepositOnRelayer[msg.sender][relayerId].balance += msg.value;
+    emit UserDeposit(relayerId, msg.sender, msg.value);
   }
 
   /**
      * withdraw from Relayer
   */
-  function withdrawFunds(bytes32 id, uint256 amount) public
+  function withdrawFunds(address relayerId, uint256 amount) public
   {
-    require(userDepositOnRelayer[msg.sender][id].lockUntil < now, "Balance locked");
-    require(userDepositOnRelayer[msg.sender][id].balance >= amount, "Insufficient balance");
-    userDepositOnRelayer[msg.sender][id].balance -= amount;
+    Relayer storage relayer = relayers[relayerId];
+    require(relayer.owner != address(0), "Relayer not found");
+    require(userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock < block.number, "Balance locked");
+    require(userDepositOnRelayer[msg.sender][relayerId].balance >= amount, "Insufficient balance");
+    userDepositOnRelayer[msg.sender][relayerId].balance -= amount;
+
+    currentRelayerCoins[relayerId] -= amount;
+    if (userDepositOnRelayer[msg.sender][relayerId].balance == 0) {
+      currentRelayerUsers[relayerId] -= 1;
+    }
     msg.sender.transfer(amount);
-    emit UserWithdraw(id, msg.sender, amount);   
+    emit UserWithdraw(relayerId, msg.sender, amount);   
   }
 
   /**
@@ -275,12 +387,16 @@ using SafeMath for uint256;
 		uint8   v,
 		bytes32 r,
 		bytes32 s,
-		bytes32 relayerId,
+		address relayerId,
 		bytes32 nonce,
+    uint fee,
     address payable beneficiary,
 		uint256 amount) public
   {
-    require(relayers[relayerId].owner == msg.sender, "Relayer doesn't match with message signer");
+    Relayer storage relayer = relayers[relayerId];
+    
+    //require
+    require(relayer.owner == msg.sender, "Relayer doesn't match with message signer");
     bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount));
     bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
     require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
@@ -290,10 +406,15 @@ using SafeMath for uint256;
     userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce] = amount; 
     require(userDepositOnRelayer[signer][relayerId].balance >= amountToBeTransferred, "Insufficient balance");
     userDepositOnRelayer[signer][relayerId].balance -= amountToBeTransferred;
-    uint256 relayerFee = amountToBeTransferred.mulByFraction(relayers[relayerId].fee, 1000);
+    uint256 relayerFee = amountToBeTransferred.mulByFraction(fee, 1000);
+
+    if (userDepositOnRelayer[signer][relayerId].balance == 0) {
+      currentRelayerUsers[relayerId] -= 1;
+    }
+    currentRelayerCoins[relayerId] -= amountToBeTransferred;
 
     beneficiary.transfer(amountToBeTransferred - relayerFee);
-    relayers[relayerId].owner.transfer(relayerFee);
+    relayer.owner.transfer(relayerFee);
     emit RelayedOffChainTransaction(relayerId, signer, beneficiary, relayerFee, amountToBeTransferred, signer==beneficiary);   
   }
 

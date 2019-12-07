@@ -20,6 +20,9 @@
 // currently active validator set. The base implementation of `finalizeChange`
 // validates that there are existing unfinalized changes.
 
+//Remixd: remixd --remix-ide https://remix.ethereum.org -s ./
+//Validator smart contract setup: Deploy RelaySet then RelayedOwnedSet then call SetRealy
+
 pragma solidity ^0.5.0;
 
 import "./Owned.sol";

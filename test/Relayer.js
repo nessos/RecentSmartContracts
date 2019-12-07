@@ -9,7 +9,11 @@ contract('PaymentChannels', (accounts) => {
         //const PaymentChannelInstance = await getTestContract();
         console.log(PaymentChannelInstance.address);
         var ReleayerDomain = "https://www.google.com";
-        var addRelayerResponse = await PaymentChannelInstance.addRelayer(ReleayerDomain,web3.utils.fromUtf8("Google"), true, 10);
+
+        var requiredAmount = await PaymentChannelInstance.getFundRequiredForRelayer.call(150,10000,10);
+
+        //string memory domain, bytes32 name, uint fee, uint maxUsers, uint maxCoins, uint maxTxThroughput, uint offchainTxDelay
+        var addRelayerResponse = await PaymentChannelInstance.addRelayer(ReleayerDomain, web3.utils.fromUtf8("Google"), 10, 150, 10000, 10, 5000, {value: requiredAmount, from: accounts[0] });
         //console.log(addRelayerResponse.receipt.logs);
 
         var domainHash =  web3.utils.soliditySha3(ReleayerDomain);
@@ -19,16 +23,13 @@ contract('PaymentChannels', (accounts) => {
         //console.log(testHashingResponse);
 
 
-        var getRelayerRatingResponse = await PaymentChannelInstance.getRelayerRating.call(domainHash);
-        console.log("Relayer rating:" + getRelayerRatingResponse.toNumber());
-
-        var relayerResponse = await PaymentChannelInstance.relayers.call(domainHash);
-        //console.log("Relayer:" + JSON.stringify(relayerResponse));
+        var relayerResponse = await PaymentChannelInstance.relayers.call(accounts[0]);
+        console.log("Relayer:" + JSON.stringify(relayerResponse));
 
 
 
         var depositAmount = 0.0001;
-        var depositToRelayerResponse = await PaymentChannelInstance.depositToRelayer(domainHash,1, {value: web3.utils.toWei(depositAmount.toString()), from: accounts[0] });
+        var depositToRelayerResponse = await PaymentChannelInstance.depositToRelayer(accounts[0], 1, {value: web3.utils.toWei(depositAmount.toString()), from: accounts[1] });
         //console.log(depositToRelayerResponse.receipt.logs);
 
         var voteRelayerResponse = await PaymentChannelInstance.voteRelayer(domainHash,480, {from: accounts[0] });
