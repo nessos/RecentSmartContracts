@@ -136,7 +136,7 @@ using SafeMath for uint256;
     uint maxCoins;
     uint maxTxThroughput;
     uint offchainTxDelay;
-
+    uint epoch;
 
 
     //Thousands percent
@@ -146,9 +146,9 @@ using SafeMath for uint256;
   //Per epoch
   mapping(uint=>uint) public relayersCounter ;
 
-  mapping(uint=>mapping (address=>Relayer)) public epochRelayers;
+  //mapping(uint=>mapping (address=>Relayer)) public epochRelayers;
 
-  mapping(uint=>mapping (uint=>Relayer)) public epochRelayersByIndex;
+  mapping(uint=>mapping (uint=>address)) public epochRelayerOwnerByIndex;
 
   mapping (address=>Relayer) public relayers;
 
@@ -180,7 +180,7 @@ using SafeMath for uint256;
     uint targetEpoch = getTargetEpoch();
     require(targetEpoch > 1, "Canditates allowed after epoch 1");
     require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
-    require(epochRelayers[targetEpoch][msg.sender].owner == address(0), "Already registered Relayer as candidate");
+    require(relayers[msg.sender].epoch != targetEpoch, "Already registered Relayer as candidate");
     uint256 requiredAmount = getFundRequiredForRelayer(maxUsers, maxCoins, maxTxThroughput);
     require(requiredAmount <= msg.value,"Invalid required amount");
     
@@ -197,13 +197,13 @@ using SafeMath for uint256;
     relayer.maxCoins = maxCoins;
     relayer.maxTxThroughput = maxTxThroughput;
     relayer.offchainTxDelay = offchainTxDelay;
-
+    relayer.epoch = targetEpoch;
 
     if (currentRelayersNumber >= maximumRelayersNumber) {
       address toBeReplacedRelayer = address(0);
       uint toBeReplacedRelayerIndex = 0;
       for (uint i=0; i<currentRelayersNumber; i++) {
-        address relayerSelected = epochRelayersByIndex[targetEpoch][i].owner;
+        address relayerSelected = epochRelayerOwnerByIndex[targetEpoch][i];
         
         if (relayerDepositPerEpoch[targetEpoch][relayerSelected] < msg.value) {
           toBeReplacedRelayer = relayerSelected;
@@ -215,13 +215,13 @@ using SafeMath for uint256;
       if (toBeReplacedRelayer==address(0)) {
         revert("Relayers list is full");
       }
-      epochRelayers[targetEpoch][toBeReplacedRelayer] = relayer;
-      epochRelayersByIndex[targetEpoch][toBeReplacedRelayerIndex]  = relayer;
+      //epochRelayers[targetEpoch][toBeReplacedRelayer] = relayer;
+      epochRelayerOwnerByIndex[targetEpoch][toBeReplacedRelayerIndex]  = msg.sender;
 
     } else {
 
-      epochRelayers[targetEpoch][msg.sender] = relayer;
-      epochRelayersByIndex[targetEpoch][relayersCounter[targetEpoch]] = relayer;
+      //epochRelayers[targetEpoch][msg.sender] = relayer;
+      epochRelayerOwnerByIndex[targetEpoch][relayersCounter[targetEpoch]] = msg.sender;
       relayersCounter[targetEpoch]++;
     }
 
@@ -265,10 +265,10 @@ using SafeMath for uint256;
     relayer.maxCoins = maxCoins;
     relayer.maxTxThroughput = maxTxThroughput;
     relayer.offchainTxDelay = offchainTxDelay;
-
-    epochRelayers[targetEpoch][msg.sender] = relayer;
+    relayer.epoch = targetEpoch;
+    //epochRelayers[targetEpoch][msg.sender] = relayer;
     relayers[msg.sender] = relayer;
-    epochRelayersByIndex[targetEpoch][relayersCounter[targetEpoch]] = relayer;
+    epochRelayerOwnerByIndex[targetEpoch][relayersCounter[targetEpoch]] = msg.sender;
     relayersCounter[targetEpoch]++;
 
     relayerDepositPerEpoch[targetEpoch][msg.sender] += msg.value;
@@ -343,7 +343,9 @@ using SafeMath for uint256;
   {
     
     uint currentEpoch = getCurrentEpoch();
-    Relayer storage relayer = epochRelayers[currentEpoch][relayerId];
+
+    Relayer storage relayer = relayers[relayerId];
+    require(relayer.epoch == currentEpoch, "Not active relayer for current epoch");
     require(msg.value > 0, "Deposit amount should be greater then 0");
     require(lockUntilBlock > block.number, "The lockTimeInDays should be greater than zero");
     require(relayer.owner != address(0), "Relayer not found");
