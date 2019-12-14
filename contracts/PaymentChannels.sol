@@ -161,13 +161,13 @@ using SafeMath for uint256;
   mapping (uint=>mapping (address=>uint256)) public relayerDepositPerEpoch;
 
   // Notifies for a new Relayer
-  event RelayerAdded(address indexed relayer, string  domain, address indexed owner, string name, uint fee);
+  event RelayerAdded(address indexed relayer, string  domain, address indexed owner, string name, uint fee, uint offchainTxDelay);
 
   // Notifies for a new Relayer as candidate
-  event RelayerProposed(address indexed relayer, string  domain, address indexed owner, uint indexed epoch, string name, uint fee);
+  event RelayerProposed(address indexed relayer, string  domain, address indexed owner, uint indexed epoch, string name, uint fee, uint offchainTxDelay);
 
   // Notifies for Relayer updated
-  event RelayerUpdated(address indexed relayer, string  domain, string name, uint fee);
+  event RelayerUpdated(address indexed relayer, string  domain, string name, uint fee, uint offchainTxDelay);
 
   // Notifies for Relayer withdrawal of penalty funds
   event RelayerWithdrawFunds(address indexed relayer, uint epoch, uint256 amount);
@@ -184,7 +184,10 @@ using SafeMath for uint256;
     uint256 requiredAmount = getFundRequiredForRelayer(maxUsers, maxCoins, maxTxThroughput);
     require(requiredAmount <= msg.value,"Invalid required amount");
     
-    
+    require(maxUsers > 0, "maxUsers should be greater than 0");
+    require(maxCoins > 0, "maxCoins should be greater than 0");
+    require(maxTxThroughput > 0, "maxTxThroughput should be greater than 0");
+    require(offchainTxDelay > 0, "offchainTxDelay should be greater than 0");
     require(fee < 1000, "Fee should be lower than 1000");
 
     uint currentRelayersNumber = relayersCounter[targetEpoch];
@@ -232,7 +235,7 @@ using SafeMath for uint256;
     relayers[msg.sender] = relayer;
     relayerDepositPerEpoch[targetEpoch][msg.sender] += msg.value;
 
-    emit RelayerProposed(msg.sender, domain, msg.sender, targetEpoch, name, fee);    
+    emit RelayerProposed(msg.sender, domain, msg.sender, targetEpoch, name, fee, offchainTxDelay);    
   }
 
   function testHashing(bytes32 id, string memory domain) public pure returns (bool,bytes32,bytes32) {
@@ -273,7 +276,7 @@ using SafeMath for uint256;
 
     relayerDepositPerEpoch[targetEpoch][msg.sender] += msg.value;
 
-    emit RelayerAdded(msg.sender, domain, msg.sender, name, fee);    
+    emit RelayerAdded(msg.sender, domain, msg.sender, name, fee, offchainTxDelay);    
   }
 
 
@@ -283,21 +286,22 @@ using SafeMath for uint256;
   /**
      * Update Relayer
   */
-  function updateRelayer(string memory domain, string memory name, uint fee) public {
+  function updateRelayer(string memory domain, string memory name, uint fee, uint offchainTxDelay) public {
     Relayer storage relayer = relayers[msg.sender];
     require(relayer.owner != address(0), "Relayer not found");
     require(fee < 1000, "Fee should be lower than 1000");
     relayer.domain = domain;
     relayer.name = name;
     relayer.fee = fee;
-    emit RelayerUpdated(msg.sender, domain, name, fee);
+    relayer.offchainTxDelay = offchainTxDelay;
+    emit RelayerUpdated(msg.sender, domain, name, fee, offchainTxDelay);
   }
 
   
   /**
      * withdraw from Relayer
   */
-  function relayerWithdrawPenaltyFunds(address relayerId, uint epoch) public
+  function relayerWithdrawPenaltyFunds(uint epoch) public
   {
     uint currentEpoch = getCurrentEpoch();
     require(epoch < currentEpoch, "Current epoch should be lower than requested epoch");
@@ -305,7 +309,7 @@ using SafeMath for uint256;
     uint256 remainingAmount = relayerDepositPerEpoch[epoch][msg.sender];
     require(remainingAmount > 0, "Insufficient balance");
     
-    Relayer storage relayer = relayers[relayerId];
+    Relayer storage relayer = relayers[msg.sender];
     require(relayer.owner != address(0), "Relayer not found");
 
     relayerDepositPerEpoch[epoch][msg.sender] = 0;
@@ -383,7 +387,26 @@ using SafeMath for uint256;
   }
 
   /**
-     * withdraw from Relayer
+     * execute offchain payment
+  */
+  function checkFinalizeOffchainRelayerSignature(bytes32 h,
+		uint8   v,
+		bytes32 r,
+		bytes32 s,
+		address relayerId,
+		bytes32 nonce,
+    uint fee,
+    address payable beneficiary,
+		uint256 amount) public view returns (address signer)
+  {
+    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
+    bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
+    require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
+    signer = ecrecover(h, v, r, s);
+  }
+
+  /**
+     * execute offchain payment
   */
   function finalizeOffchainRelayerTransaction(bytes32 h,
 		uint8   v,
@@ -399,7 +422,7 @@ using SafeMath for uint256;
     
     //require
     require(relayer.owner == msg.sender, "Relayer doesn't match with message signer");
-    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount));
+    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
     bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
     require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
     address signer = ecrecover(h, v, r, s);
