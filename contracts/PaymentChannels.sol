@@ -387,7 +387,7 @@ using SafeMath for uint256;
   }
 
   /**
-     * execute offchain payment
+     * check offchain payment
   */
   function checkFinalizeOffchainRelayerSignature(bytes32 h,
 		uint8   v,
@@ -403,6 +403,21 @@ using SafeMath for uint256;
     bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
     require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
     signer = ecrecover(h, v, r, s);
+    return signer;
+  }
+
+  /**
+     * check offchain payment
+  */
+  function getFinalizeOffchainRelayerSignature(
+		address relayerId,
+		bytes32 nonce,
+    uint fee,
+    address payable beneficiary,
+		uint256 amount) public view returns (bytes32 prefixedProof)
+  {
+    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
+    return keccak256(abi.encode(prefix, proof));
   }
 
   /**
