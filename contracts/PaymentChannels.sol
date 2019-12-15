@@ -5,7 +5,7 @@ import "./RecentBlockchain.sol";
 
 contract PaymentChannels is RecentBlockchain {
 
-bytes private prefix = "\x19Re-CentT Signed Message:\n32";  
+//bytes private prefix = "\x19Re-CentT Signed Message:\n32";  
 
 using SafeMath for uint256;
 
@@ -104,8 +104,8 @@ using SafeMath for uint256;
 		uint256 amount) public
   {
     bytes32 proof = keccak256(abi.encodePacked(channelId, nonce, amount));
-    bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
-    require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
+    //bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
+    require(proof == h, "Off-chain transaction hash does't match with payload");
     address signer = ecrecover(h, v, r, s);
     require(signer == channels[channelId].sender, "Signer should be the channel creator");
     require(noncePaidAmount[channelId][nonce] < amount, "Requested amount should be greater than the previous finalized for P2P content transaction");
@@ -397,11 +397,11 @@ using SafeMath for uint256;
 		bytes32 nonce,
     uint fee,
     address payable beneficiary,
-		uint256 amount) public view returns (address signer)
+		uint256 amount) public pure returns (address signer)
   {
     bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
-    bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
-    require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
+    //bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
+    require(proof == h, "Off-chain transaction hash does't match with payload");
     signer = ecrecover(h, v, r, s);
     return signer;
   }
@@ -414,10 +414,10 @@ using SafeMath for uint256;
 		bytes32 nonce,
     uint fee,
     address payable beneficiary,
-		uint256 amount) public view returns (bytes32 prefixedProof)
+		uint256 amount) public pure returns (bytes32 proof)
   {
-    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
-    return keccak256(abi.encode(prefix, proof));
+    return keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
+    //return keccak256(abi.encode(prefix, proof));
   }
 
   /**
@@ -438,8 +438,8 @@ using SafeMath for uint256;
     //require
     require(relayer.owner == msg.sender, "Relayer doesn't match with message signer");
     bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
-    bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
-    require(prefixedProof == h, "Off-chain transaction hash does't match with payload");
+    //bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
+    require(proof == h, "Off-chain transaction hash does't match with payload");
     address signer = ecrecover(h, v, r, s);
     require(userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce] < amount, "Requested amount should be greater than the previous finalized for withdraw request or P2P content transaction");
     uint256 amountToBeTransferred =  amount - userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce];
