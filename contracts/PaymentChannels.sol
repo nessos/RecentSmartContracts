@@ -354,7 +354,7 @@ using SafeMath for uint256;
     require(lockUntilBlock > block.number, "The lockTimeInDays should be greater than zero");
     require(relayer.owner != address(0), "Relayer not found");
     userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock = lockUntilBlock;
-    if (userDepositOnRelayer[msg.sender][relayerId].balance > 0) {
+    if (userDepositOnRelayer[msg.sender][relayerId].balance == 0) {
       currentRelayerUsers[relayerId] += 1;
     }
 
@@ -386,61 +386,93 @@ using SafeMath for uint256;
     emit UserWithdraw(relayerId, msg.sender, amount);   
   }
 
+
   /**
-     * check offchain payment
+     * check offchain payment 
   */
-  function checkFinalizeOffchainRelayerSignature(bytes32 h,
+  function checkOffchainSignature(
+    bytes32 h,
 		uint8   v,
 		bytes32 r,
 		bytes32 s,
-		address relayerId,
 		bytes32 nonce,
     uint fee,
     address payable beneficiary,
 		uint256 amount) public pure returns (address signer)
   {
-    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
-    //bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
+    bytes32 proof = keccak256(abi.encodePacked( beneficiary, nonce, amount, fee));
     require(proof == h, "Off-chain transaction hash does't match with payload");
     signer = ecrecover(h, v, r, s);
+
     return signer;
   }
 
+
   /**
-     * check offchain payment
+     * check offchain payment complete
   */
-  function getFinalizeOffchainRelayerSignature(
-		address relayerId,
-		bytes32 nonce,
-    uint fee,
-    address payable beneficiary,
-		uint256 amount) public pure returns (bytes32 proof)
+  function checkOffchainRelayerSignature(
+    bytes32 proof,
+    bytes32 rh,
+	  uint8   rv,
+	  bytes32 rr,
+	  bytes32 rs,
+    uint txUntilBlock) public pure returns (address payable relayerid)
   {
-    return keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
-    //return keccak256(abi.encode(prefix, proof));
+    bytes32 relayerProof = keccak256(abi.encodePacked(proof, txUntilBlock));
+    require(relayerProof == rh, "Off-chain transaction hash does't match with payload");
+    address relayer = ecrecover(rh, rv, rr, rs);
+    relayerid =  address(uint160((relayer)));
+    return relayerid;
   }
+
+  // /**
+  //    * check offchain payment
+  // */
+  // function getFinalizeOffchainRelayerSignature(
+	// 	address relayerId,
+	// 	bytes32 nonce,
+  //   uint fee,
+  //   address payable beneficiary,
+	// 	uint256 amount) public pure returns (bytes32 proof)
+  // {
+  //   return keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
+  //   //return keccak256(abi.encode(prefix, proof));
+  // }
 
   /**
      * execute offchain payment
   */
-  function finalizeOffchainRelayerTransaction(bytes32 h,
+  function finalizeOffchainRelayerTransaction(
+    bytes32 h,
 		uint8   v,
 		bytes32 r,
 		bytes32 s,
-		address relayerId,
+    bytes32 rh,
+		uint8   rv,
+		bytes32 rr,
+		bytes32 rs,
 		bytes32 nonce,
     uint fee,
+    uint txUntilBlock,
     address payable beneficiary,
 		uint256 amount) public
   {
+    
+    address signer = checkOffchainSignature(h, v, r, s, nonce, fee, beneficiary, amount );
+    address payable relayerId = checkOffchainRelayerSignature(h, rh, rv, rr, rs, txUntilBlock);
+
     Relayer storage relayer = relayers[relayerId];
     
-    //require
     require(relayer.owner == msg.sender, "Relayer doesn't match with message signer");
-    bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
-    //bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
-    require(proof == h, "Off-chain transaction hash does't match with payload");
-    address signer = ecrecover(h, v, r, s);
+
+
+    // bytes32 proof = keccak256(abi.encodePacked(relayerId, beneficiary, nonce, amount, fee));
+    // //bytes32 prefixedProof = keccak256(abi.encode(prefix, proof));
+    // require(proof == h, "Off-chain transaction hash does't match with payload");
+    // address signer = ecrecover(h, v, r, s);
+
+
     require(userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce] < amount, "Requested amount should be greater than the previous finalized for withdraw request or P2P content transaction");
     uint256 amountToBeTransferred =  amount - userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce];
     userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce] = amount; 
