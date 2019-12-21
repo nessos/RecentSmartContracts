@@ -203,13 +203,13 @@ using SafeMath for uint256;
     relayer.epoch = targetEpoch;
 
     if (currentRelayersNumber >= maximumRelayersNumber) {
-      address toBeReplacedRelayer = address(0);
+      address payable toBeReplacedRelayer = address(0);
       uint toBeReplacedRelayerIndex = 0;
       for (uint i=0; i<currentRelayersNumber; i++) {
         address relayerSelected = epochRelayerOwnerByIndex[targetEpoch][i];
         
         if (relayerDepositPerEpoch[targetEpoch][relayerSelected] < msg.value) {
-          toBeReplacedRelayer = relayerSelected;
+          toBeReplacedRelayer = address(uint160(relayerSelected));
           toBeReplacedRelayerIndex = i;
           break;
         } 
@@ -220,7 +220,9 @@ using SafeMath for uint256;
       }
       //epochRelayers[targetEpoch][toBeReplacedRelayer] = relayer;
       epochRelayerOwnerByIndex[targetEpoch][toBeReplacedRelayerIndex]  = msg.sender;
-
+      uint256 refund = relayerDepositPerEpoch[targetEpoch][toBeReplacedRelayer];
+      relayerDepositPerEpoch[targetEpoch][toBeReplacedRelayer] = 0;
+      toBeReplacedRelayer.transfer(refund);
     } else {
 
       //epochRelayers[targetEpoch][msg.sender] = relayer;
@@ -251,11 +253,12 @@ using SafeMath for uint256;
     
     uint256 requiredAmount = getFundRequiredForRelayer(maxUsers, maxCoins, maxTxThroughput);
     require(requiredAmount <= msg.value,"Invalid required amount");
-    uint targetEpoch = getTargetEpoch();
+    uint currentEpoch = getCurrentEpoch();
+    require(currentEpoch == 1,"AddRelayer is allowed only on 1st epoch");
     Relayer storage relayer = relayers[msg.sender];
 
-    require(relayersCounter[targetEpoch] < maximumRelayersNumber,"Relayers list is full");
-    require(targetEpoch == 1,"AddRelayer is allowed only on 1st epoch");
+    require(relayersCounter[currentEpoch] < maximumRelayersNumber,"Relayers list is full");
+    
     require(relayer.owner == address(0), "Already registered Relayer");
     require(fee < 1000, "Fee should be lower than 1000");
 
@@ -268,13 +271,13 @@ using SafeMath for uint256;
     relayer.maxCoins = maxCoins;
     relayer.maxTxThroughput = maxTxThroughput;
     relayer.offchainTxDelay = offchainTxDelay;
-    relayer.epoch = targetEpoch;
+    relayer.epoch = currentEpoch;
     //epochRelayers[targetEpoch][msg.sender] = relayer;
     relayers[msg.sender] = relayer;
-    epochRelayerOwnerByIndex[targetEpoch][relayersCounter[targetEpoch]] = msg.sender;
-    relayersCounter[targetEpoch]++;
+    epochRelayerOwnerByIndex[currentEpoch][relayersCounter[currentEpoch]] = msg.sender;
+    relayersCounter[currentEpoch]++;
 
-    relayerDepositPerEpoch[targetEpoch][msg.sender] += msg.value;
+    relayerDepositPerEpoch[currentEpoch][msg.sender] += msg.value;
 
     emit RelayerAdded(msg.sender, domain, msg.sender, name, fee, offchainTxDelay);    
   }

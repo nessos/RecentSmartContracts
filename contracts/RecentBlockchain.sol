@@ -25,11 +25,16 @@ contract RecentBlockchain {
 		return block.number.div(epochBlocks) + 1;
 	}
 
+    function getEpochByBlock(uint requestedBlock)
+		public view returns (uint epoch)
+	{
+		return requestedBlock.div(epochBlocks) + 1;
+	}
+
     function getTargetEpoch()
 		public view returns (uint epoch)
 	{
-		uint targetEpoch = getCurrentEpoch();
-        return targetEpoch == 1 ? 1 : targetEpoch + 1;
+        return getCurrentEpoch() + 1;
 	}
 
     function getCurrentEpochEnd()
@@ -50,7 +55,7 @@ contract RecentBlockchain {
 		return getCurrentEpochEnd().sub(blocksBeforeRelayersElectionAllowed);
 	}
 
-    function getFundRequiredForRelayer(uint maxUsers, uint maxCoins, uint maxTxThroughputPer100000Blocks)
+    function getFundRequiredForRelayer(uint maxUsers, uint256 maxCoins, uint maxTxThroughputPer100000Blocks)
     public pure returns (uint256 requiredAmount)
 	{
         if (maxUsers <= 1000) {
