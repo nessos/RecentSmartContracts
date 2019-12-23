@@ -268,7 +268,7 @@ using SafeMath for uint256;
     uint index = epochRelayerIndex[targetEpoch][msg.sender];
     require(index > 0, "Relayer not found");
     uint currentEpoch = getCurrentEpoch();
-    require(targetEpoch < currentEpoch, "Current epoch should be lower than requested epoch");
+    require(targetEpoch + 1 < currentEpoch, "Current epoch should be lower than requested epoch");
 
     uint256 remainingAmount = relayers[targetEpoch][index].remainingPenaltyFunds;
     require(remainingAmount > 0, "Insufficient balance");
@@ -300,7 +300,7 @@ using SafeMath for uint256;
   event UserWithdraw(address indexed relayer, address indexed user, uint256 amount);
 
   // Notifies for Off-chain transaction finalized
-  event RelayedOffChainTransaction(address indexed relayer, address indexed user, address indexed beneficiary, uint256 relayerFee, uint256 beneficiaryAmount, bool isWithdraw);
+  event RelayedOffChainTransaction(address indexed relayer, address indexed user, address indexed beneficiary, uint256 relayerFee, uint256 beneficiaryAmount, bool isPayedFromPenaltyFunds);
 
   /**
      * deposit to Relayer
@@ -310,14 +310,14 @@ using SafeMath for uint256;
     uint targetEpoch = getCurrentEpoch();
     uint index = epochRelayerIndex[targetEpoch][relayerId];
     require(index > 0, "Relayer not found");
-    
+    require(relayers[targetEpoch][index].remainingPenaltyFunds > 0, "Relayer doesn't have any remaining penalty funds");
     require(msg.value > 0, "Deposit amount should be greater then 0");
     require(lockUntilBlock > block.number, "The lockTimeInDays should be greater than zero");
-    userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock = lockUntilBlock;
-    if (userDepositOnRelayer[msg.sender][relayerId].balance == 0) {
+    
+    if (userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock == 0) {
       relayers[targetEpoch][index].currentUsers += 1;
     }
-
+    userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock = lockUntilBlock;
     require(relayers[targetEpoch][index].currentUsers <= relayers[targetEpoch][index].maxUsers, "Max users limit violated");
 
     relayers[targetEpoch][index].currentCoins += msg.value;
@@ -433,13 +433,22 @@ using SafeMath for uint256;
     uint256 amountToBeTransferred =  amount - userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce];
     userToBeneficiaryFinalizedAmountForNonce[signer][beneficiary][nonce] = amount; 
     require(userDepositOnRelayer[signer][relayerId].balance >= amountToBeTransferred, "Insufficient balance");
-    userDepositOnRelayer[signer][relayerId].balance -= amountToBeTransferred;
-    uint256 relayerFee = amountToBeTransferred.mulByFraction(fee, 1000);
-
+    uint256 relayerFee = 0;
+    bool isPayedFromPenaltyFunds = false;
+    if (txUntilBlock >= block.number) {
+      userDepositOnRelayer[signer][relayerId].balance -= amountToBeTransferred;
+      relayerFee = amountToBeTransferred.mulByFraction(fee, 1000);
+    } else {
+      isPayedFromPenaltyFunds = true;
+      relayers[epoch][index].remainingPenaltyFunds -= amountToBeTransferred;
+    }
 
     beneficiary.transfer(amountToBeTransferred - relayerFee);
-    relayerId.transfer(relayerFee);
-    emit RelayedOffChainTransaction(relayerId, signer, beneficiary, relayerFee, amountToBeTransferred, signer==beneficiary);   
+    if (relayerFee > 0) {
+      relayerId.transfer(relayerFee);
+    }
+      
+    emit RelayedOffChainTransaction(relayerId, signer, beneficiary, relayerFee, amountToBeTransferred, isPayedFromPenaltyFunds);   
   }
 
 }
