@@ -18,6 +18,8 @@ contract RecentBlockchain {
 
     uint public blocksPeriodRegulateThroughput = 1000;
 
+    uint256 public pricePerMb = 0.001 ether;
+
 
 	function getCurrentEpoch()
 		public view returns (uint epoch)

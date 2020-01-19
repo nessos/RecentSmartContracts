@@ -25,10 +25,11 @@
 
 pragma solidity ^0.5.0;
 
-import "./Owned.sol";
+import "./../interfaces/Owned.sol";
+import "../RecentBlockchain.sol";
 
 
-contract BaseOwnedSet is Owned {
+contract BaseOwnedSet is Owned,RecentBlockchain {
 	// EVENTS
 	event ChangeFinalized(address[] currentSet);
 
@@ -50,9 +51,26 @@ contract BaseOwnedSet is Owned {
 	uint public recentBlocks = 20;
 
 	// Current list of addresses entitled to participate in the consensus.
-	address[] validators;
-	address[] pending;
-	mapping(address => AddressStatus) status;
+	mapping(uint=> address[]) public validators;
+	//mapping(uint=> address[]) public pending;
+	mapping(uint=>mapping(address => AddressStatus)) public status;
+
+	mapping(uint=> mapping(address=> uint256)) public validatorStakingFunds;
+
+	mapping(uint=> mapping(address=> uint256)) public validatorWitnessesFunds;
+
+	mapping(uint=> mapping(address=> mapping(address=> uint256))) public witnessStakingFundsForValidator;
+
+	mapping(uint=> mapping(address=> mapping(address=> uint256))) public freeServiceProvidersFundsForValidator;
+
+	mapping(uint=> mapping(address => address[])) public validatorWitnesses;
+
+	mapping(uint=> mapping(address => mapping(address=>AddressStatus))) public validatorWitnessesStatus;
+
+	mapping(uint=> mapping(address => address[])) public validatorFreeServiceProviders;
+
+	mapping(uint=> mapping(address => mapping(address=>AddressStatus))) public validatorFreeServiceProvidersStatus;
+
 
 	// MODIFIERS
 
@@ -66,21 +84,23 @@ contract BaseOwnedSet is Owned {
 	/// can't report on a validator that is currently active but pending to be
 	/// removed. This is a compromise for simplicity since the reporting
 	/// functions only emit events which can be tracked off-chain.
-	modifier isValidator(address _someone) {
-		bool isIn = status[_someone].isIn;
-		uint index = status[_someone].index;
+	modifier isValidator(address addr) {
+		uint epoch = getCurrentEpoch();
+		bool isIn = status[epoch][addr].isIn;
+		uint index = status[epoch][addr].index;
 
-		require(isIn && index < validators.length && validators[index] == _someone);
+		require(isIn && index < validators[epoch].length && validators[epoch][index] == addr);
 		_;
 	}
 
-	modifier isNotValidator(address _someone) {
-		require(!status[_someone].isIn);
+	modifier isNotValidator(address addr) {
+		uint epoch = getCurrentEpoch();
+		require(!status[epoch][addr].isIn);
 		_;
 	}
 
-	modifier isRecent(uint _blockNumber) {
-		require(block.number <= _blockNumber + recentBlocks && _blockNumber < block.number);
+	modifier isRecent(uint blockNumber) {
+		require(block.number <= blockNumber + recentBlocks && blockNumber < block.number);
 		_;
 	}
 
@@ -94,77 +114,84 @@ contract BaseOwnedSet is Owned {
 		_;
 	}
 
-	constructor(address[] memory _initial)
+	constructor(address[] memory initial)
 		public
 	{
-		pending = _initial;
-		for (uint i = 0; i < _initial.length; i++) {
-			status[_initial[i]].isIn = true;
-			status[_initial[i]].index = i;
+		for (uint i = 0; i < initial.length; i++) {
+			status[1][initial[i]].isIn = true;
+			status[1][initial[i]].index = i;
 		}
-		validators = pending;
+		validators[1] = initial;
 	}
 
 	// OWNER FUNCTIONS
 
-	// Add a validator.
-	function addValidator(address _validator)
+	// // Add a validator.
+	// function addValidator(address _validator)
+	// 	external
+	// 	onlyOwner
+	// 	isNotValidator(_validator)
+	// {
+	// 	status[_validator].isIn = true;
+	// 	status[_validator].index = pending.length;
+	// 	pending.push(_validator);
+	// 	triggerChange();
+	// }
+
+	// // Remove a validator.
+	// function removeValidator(address _validator)
+	// 	external
+	// 	onlyOwner
+	// 	isValidator(_validator)
+	// {
+	// 	// Remove validator from pending by moving the
+	// 	// last element to its slot
+	// 	uint index = status[_validator].index;
+	// 	pending[index] = pending[pending.length - 1];
+	// 	status[pending[index]].index = index;
+	// 	delete pending[pending.length - 1];
+	// 	pending.length--;
+
+	// 	// Reset address status
+	// 	delete status[_validator];
+
+	// 	triggerChange();
+	// }
+
+
+	function getValidatorsAAA(uint epoch)
 		external
-		onlyOwner
-		isNotValidator(_validator)
+		view
+		returns (address[] memory)
 	{
-		status[_validator].isIn = true;
-		status[_validator].index = pending.length;
-		pending.push(_validator);
-		triggerChange();
+		return validators[epoch];
 	}
-
-	// Remove a validator.
-	function removeValidator(address _validator)
-		external
-		onlyOwner
-		isValidator(_validator)
-	{
-		// Remove validator from pending by moving the
-		// last element to its slot
-		uint index = status[_validator].index;
-		pending[index] = pending[pending.length - 1];
-		status[pending[index]].index = index;
-		delete pending[pending.length - 1];
-		pending.length--;
-
-		// Reset address status
-		delete status[_validator];
-
-		triggerChange();
-	}
-
-	function setRecentBlocks(uint _recentBlocks)
-		external
-		onlyOwner
-	{
-		recentBlocks = _recentBlocks;
-	}
-
-	// GETTERS
 
 	// Called to determine the current set of validators.
+	function getValidators(uint epoch)
+		external
+		view
+		returns (address[] memory)
+	{
+		return validators[epoch];
+	}
+
 	function getValidators()
 		external
 		view
 		returns (address[] memory)
 	{
-		return validators;
+		return validators[getCurrentEpoch()];
 	}
 
-	// Called to determine the pending set of validators.
-	function getPending()
-		external
-		view
-		returns (address[] memory)
-	{
-		return pending;
-	}
+	// // Called to determine the pending set of validators.
+	// function getPending()
+	// 	external
+	// 	view
+	// 	returns (address[] memory)
+	// {
+	// 	return pending;
+	// }
 
 	// INTERNAL
 
@@ -198,9 +225,9 @@ contract BaseOwnedSet is Owned {
 		internal
 		whenNotFinalized
 	{
-		validators = pending;
 		finalized = true;
-		emit ChangeFinalized(validators);
+		uint epoch = getCurrentEpoch();
+		emit ChangeFinalized(validators[epoch]);
 	}
 
 	// PRIVATE

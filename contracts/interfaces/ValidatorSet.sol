@@ -52,4 +52,9 @@ interface ValidatorSet {
 		external
 		view
 		returns (address[] memory);
+
+	function getValidators(uint epoch)
+		external
+		view
+		returns (address[] memory);
 }

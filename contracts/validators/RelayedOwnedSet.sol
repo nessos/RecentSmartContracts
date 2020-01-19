@@ -17,7 +17,7 @@
 
 pragma solidity ^0.5.0;
 
-import "./interfaces/BaseOwnedSet.sol";
+import "./BaseOwnedSet.sol";
 import "./RelaySet.sol";
 
 
@@ -76,6 +76,6 @@ contract RelayedOwnedSet is BaseOwnedSet {
 	function initiateChange()
 		private
 	{
-		relaySet.initiateChange(blockhash(block.number - 1), pending);
+		relaySet.initiateChange(blockhash(block.number - 1), validators[getCurrentEpoch()]);
 	}
 }

@@ -16,8 +16,8 @@
 
 pragma solidity ^0.5.0;
 
-import "./interfaces/BaseOwnedSet.sol";
-import "./interfaces/ValidatorSet.sol";
+import "./BaseOwnedSet.sol";
+import "./../interfaces/ValidatorSet.sol";
 
 
 contract OwnedSet is ValidatorSet, BaseOwnedSet {
@@ -71,6 +71,6 @@ contract OwnedSet is ValidatorSet, BaseOwnedSet {
 	function initiateChange()
 		private
 	{
-		emit InitiateChange(blockhash(block.number - 1), pending);
+		emit InitiateChange(blockhash(block.number - 1), validators[getCurrentEpoch()]);
 	}
 }
