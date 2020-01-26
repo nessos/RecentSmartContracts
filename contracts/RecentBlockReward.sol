@@ -17,14 +17,13 @@
 pragma solidity ^0.5.0;
 
 import "./BlockReward.sol";
+import "./RecentBlockchain.sol";
 
-
-contract RecentBlockReward is BlockReward {
+contract RecentBlockReward is BlockReward, RecentBlockchain {
 	address systemAddress;
 
 	uint lastClaimedIssuanceBlock;
-	uint256 maxReward = 10 ether;
-	uint halvingEvery = 12614400;
+
 
 	modifier onlySystem {
 		require(msg.sender == systemAddress);
@@ -36,26 +35,13 @@ contract RecentBlockReward is BlockReward {
 		systemAddress = _systemAddress;
 	}
 
-	function calculateReward(uint issuanceBlock) private returns (uint256) {
-		require(lastClaimedIssuanceBlock < issuanceBlock);
-		uint divisor = (issuanceBlock / halvingEvery) + 1;
-		uint blockReward = maxReward / divisor;
-		uint multiplier = 1;
-		if (lastClaimedIssuanceBlock > 0) {
-			multiplier = issuanceBlock - lastClaimedIssuanceBlock;
-		}
-		uint totalReward = multiplier * blockReward;
-		require(totalReward > 0);
-		lastClaimedIssuanceBlock = issuanceBlock;
-		return totalReward;
-	}
 
 
 	// produce rewards for the given benefactors, with corresponding reward codes.
 	// only callable by `SYSTEM_ADDRESS`
 	function reward(address[] calldata benefactors, uint16[] calldata kind) external onlySystem returns (address[] memory, uint256[] memory) {
 		require(benefactors.length == kind.length);
-		uint256 calculateRewardValue = calculateReward(block.number);
+		uint256 calculateRewardValue = calculateReward(block.number, lastClaimedIssuanceBlock);
 		uint256[] memory rewards = new uint256[](benefactors.length);
 		for (uint i = 0; i < benefactors.length; i++) {
 			if (kind[i]==0) {

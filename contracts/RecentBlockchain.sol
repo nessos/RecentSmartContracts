@@ -6,6 +6,7 @@ contract RecentBlockchain {
 
     using SafeMath for uint;
 
+
     uint public epochBlocks = 1000000;
 
     uint public blocksBeforeValidatorElectionAllowed = 10000;
@@ -19,6 +20,35 @@ contract RecentBlockchain {
     uint public blocksPeriodRegulateThroughput = 1000;
 
     uint256 public pricePerMb = 0.001 ether;
+    uint public witnessRequiredBalancePercent = 3;
+
+    uint256 public maxReward = 10 ether;
+    uint256 public minReward = 0.000001 ether;
+
+	uint public halvingEvery = epochBlocks.mul(2);
+
+
+	function calculateReward(uint issuanceBlock, uint lastClaimedIssuanceBlock) public view returns (uint256) {
+		require(lastClaimedIssuanceBlock < issuanceBlock);
+		uint divisor = (issuanceBlock / halvingEvery) + 1;
+		uint blockReward = maxReward / divisor;
+		uint multiplier = 1;
+		if (lastClaimedIssuanceBlock > 0) {
+			multiplier = issuanceBlock - lastClaimedIssuanceBlock;
+		}
+		uint totalReward = multiplier * blockReward;
+        if (totalReward < minReward) {
+            totalReward = minReward;
+        }
+		lastClaimedIssuanceBlock = issuanceBlock;
+		return totalReward;
+	}
+
+    function calculateReward(uint epoch) public view returns (uint256) {
+        uint  issuanceBlock = epoch.mul(epochBlocks)-1;   
+        uint  lastClaimedIssuanceBlock = epoch.mul(epochBlocks)-2; 
+		return calculateReward(issuanceBlock, lastClaimedIssuanceBlock);
+	}
 
 
 	function getCurrentEpoch()
