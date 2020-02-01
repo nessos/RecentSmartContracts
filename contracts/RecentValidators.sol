@@ -382,13 +382,12 @@ contract RecentValidators is RecentBlockchain {
 
 	// PRIVATE
 
-	function triggerChange()
-		private
-		whenFinalized
-	{
-		finalized = false;
-		initiateChange();
-	}
+	// function triggerChange()
+	// 	private
+	// 	whenFinalized
+	// {
+	// 	finalized = false;
+	// }
 
 
 	event InitiateChange(bytes32 indexed _parentHash, address[] _newSet);
@@ -399,6 +398,4 @@ contract RecentValidators is RecentBlockchain {
 		emit InitiateChange(parentHash, newSet);
 	}
 
-	function initiateChange()
-		private;
 }
