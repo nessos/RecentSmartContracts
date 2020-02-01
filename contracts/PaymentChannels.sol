@@ -1,13 +1,8 @@
 pragma solidity ^0.5.0;
 
-import "./SafeMath.sol";
 import "./RecentBlockchain.sol";
 
 contract PaymentChannels is RecentBlockchain {
-
-//bytes private prefix = "\x19Re-CentT Signed Message:\n32";  
-
-using SafeMath for uint256;
 
   /**
     * Constructor function

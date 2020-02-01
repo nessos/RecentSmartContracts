@@ -25,11 +25,23 @@
 
 pragma solidity ^0.5.0;
 
-import "./../interfaces/Owned.sol";
-import "../RecentBlockchain.sol";
+import "./RecentBlockchain.sol";
 
 
-contract BaseOwnedSet is Owned,RecentBlockchain {
+contract Validators is RecentBlockchain {
+
+	constructor(address[] memory initial) public
+	{
+		systemAddress = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE;
+		for (uint i = 0; i < initial.length; i++) {
+			status[1][initial[i]].isIn = true;
+			status[1][initial[i]].index = i;
+		}
+		validators[1] = initial;
+	}
+
+	address public systemAddress;
+
 	// EVENTS
 	event ChangeFinalized(address[] currentSet);
 
@@ -76,18 +88,6 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 
 
 
-	// MODIFIERS
-
-	/// Asserts whether a given address is currently a validator. A validator
-	/// that is pending to be added is not considered a validator, only when
-	/// that change is finalized will this method return true. A validator that
-	/// is pending to be removed is immediately not considered a validator
-	/// (before the change is finalized).
-	///
-	/// For the purposes of this contract one of the consequences is that you
-	/// can't report on a validator that is currently active but pending to be
-	/// removed. This is a compromise for simplicity since the reporting
-	/// functions only emit events which can be tracked off-chain.
 	modifier isValidator(address addr) {
 		uint epoch = getCurrentEpoch();
 		bool isIn = status[epoch][addr].isIn;
@@ -100,6 +100,11 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 	modifier isNotValidator(address addr) {
 		uint epoch = getCurrentEpoch();
 		require(!status[epoch][addr].isIn);
+		_;
+	}
+
+	modifier onlySystem() {
+		require(msg.sender == systemAddress);
 		_;
 	}
 
@@ -118,15 +123,7 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 		_;
 	}
 
-	constructor(address[] memory initial)
-		public
-	{
-		for (uint i = 0; i < initial.length; i++) {
-			status[1][initial[i]].isIn = true;
-			status[1][initial[i]].index = i;
-		}
-		validators[1] = initial;
-	}
+	
 
 
 	event ValidatorAdded(uint indexed epoch, address indexed validator);
@@ -142,7 +139,7 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 
 	
 
-	function validatorVoted(uint epoch, uint256 amount, address payable validator) public {
+	function validatorVoted(uint epoch, uint256 amount, address payable validator) private {
 		validatorTotalStakingFunds[epoch][validator] += amount;
 		if (!status[epoch][validator].isIn) {
 			if (validators[epoch].length < maximumValidatorsNumber) {
@@ -212,11 +209,11 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 
 	mapping(uint=> mapping(address=> mapping(address=> uint256))) public validatorWitnessPaidAmount;
 
-	event witnessPaid(uint indexed epoch, address indexed witness, address indexed validator, uint256 amount);
+	event WitnessPaid(uint indexed epoch, address indexed witness, address indexed validator, uint256 amount);
 
 
 
-	function witnessRequestPayment(uint epoch, address validator) public {
+	function witnessPaymentRequest(uint epoch, address validator) public {
 		uint currentEpoch = getCurrentEpoch();
 		require(currentEpoch  > epoch , "Current epoch should be greater than requested");
 		require(witnessStakingFundsForValidator[epoch][msg.sender][validator] > 0, "Not a valid witness");
@@ -226,9 +223,58 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 		uint256 amount = validatorWitnessesFunds[epoch][validator].mulByFraction(witnessStakingFundsForValidator[epoch][msg.sender][validator],validatorTotalWitnessesFunds[epoch][validator]);
 		validatorWitnessPaidAmount[epoch][msg.sender][validator] = amount;
 		msg.sender.transfer(amount);
-		emit witnessPaid(epoch, msg.sender, validator, amount);	
+		emit WitnessPaid(epoch, msg.sender, validator, amount);	
 	}
 
+
+	event WitnessRefunded(uint indexed epoch, address indexed witness, address indexed validator, uint256 amount);
+
+	function witnessWithdrawRequest(uint epoch, address validator) public {
+		uint currentEpoch = getCurrentEpoch();
+		require(witnessStakingFundsForValidator[epoch][msg.sender][validator] > 0, "No remaining funds");
+		if (status[epoch][validator].isIn) {
+			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
+		} else {
+			require(currentEpoch  > epoch, "Current epoch should be greater than requested");
+		}
+		uint256 amount = witnessStakingFundsForValidator[epoch][msg.sender][validator];
+		witnessStakingFundsForValidator[epoch][msg.sender][validator] = 0;
+		msg.sender.transfer(amount);
+		emit WitnessRefunded(epoch, msg.sender, validator, amount);	
+	}
+
+	event ValidatorRefunded(uint indexed epoch, address indexed validator, uint256 amount);
+
+	function validatorWithdrawRequest(uint epoch) public {
+		uint currentEpoch = getCurrentEpoch();
+		require(validatorStakingFunds[epoch][msg.sender]> 0, "No remaining funds");
+		if (status[epoch][msg.sender].isIn) {
+			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
+		} else {
+			require(currentEpoch  > epoch, "Current epoch should be greater than requested");
+		}
+		uint256 amount = validatorStakingFunds[epoch][msg.sender];
+		validatorStakingFunds[epoch][msg.sender] = 0;
+		msg.sender.transfer(amount);
+		emit ValidatorRefunded(epoch, msg.sender, amount);	
+	}
+
+
+	event FreeServiceProviderRefunded(uint indexed epoch, address indexed witness, address indexed validator, uint256 amount);
+
+	function freeServiceProviderWithdrawRequest(uint epoch, address validator) public {
+		uint currentEpoch = getCurrentEpoch();
+		require(freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] > 0, "No remaining funds");
+		if (status[epoch][validator].isIn) {
+			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
+		} else {
+			require(currentEpoch  > epoch, "Current epoch should be greater than requested");
+		}
+		uint256 amount = freeServiceProvidersFundsForValidator[epoch][msg.sender][validator];
+		freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] = 0;
+		msg.sender.transfer(amount);
+		emit FreeServiceProviderRefunded(epoch, msg.sender, validator, amount);	
+	}
 
 
 	// OWNER FUNCTIONS
@@ -266,17 +312,9 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 	// }
 
 
-	function getValidatorsAAA(uint epoch)
-		external
-		view
-		returns (address[] memory)
-	{
-		return validators[epoch];
-	}
-
 	// Called to determine the current set of validators.
 	function getValidators(uint epoch)
-		external
+		public
 		view
 		returns (address[] memory)
 	{
@@ -289,7 +327,7 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 	}
 
 	function getValidators()
-		external
+		public
 		view
 		returns (address[] memory)
 	{
@@ -308,33 +346,36 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 	// INTERNAL
 
 	// Report that a validator has misbehaved in a benign way.
-	function baseReportBenign(address _reporter, address _validator, uint _blockNumber)
-		internal
-		isValidator(_reporter)
-		isValidator(_validator)
-		isRecent(_blockNumber)
+	function reportBenign(address validator, uint blockNumber)
+		public
+		isValidator(msg.sender)
+		isValidator(validator)
+		isRecent(blockNumber)
 	{
-		emit Report(_reporter, _validator, false);
+		emit Report(msg.sender, validator, false);
 	}
 
+	mapping (address => mapping (address => mapping(uint=>bytes))) proofs;
+
 	// Report that a validator has misbehaved maliciously.
-	function baseReportMalicious(
-		address _reporter,
-		address _validator,
-		uint _blockNumber,
-		bytes memory _proof
+	function reportMalicious(
+		address validator,
+		uint blockNumber,
+		bytes memory proof
 	)
-		internal
-		isValidator(_reporter)
-		isValidator(_validator)
-		isRecent(_blockNumber)
+		public
+		isValidator(msg.sender)
+		isValidator(validator)
+		isRecent(blockNumber)
 	{
-		emit Report(_reporter, _validator, true);
+		proofs[msg.sender][validator][blockNumber] = proof;
+		emit Report(msg.sender, validator, true);
 	}
 
 	// Called when an initiated change reaches finality and is activated.
-	function baseFinalizeChange()
-		internal
+	function finalizeChange()
+		public
+		onlySystem
 		whenNotFinalized
 	{
 		finalized = true;
@@ -350,6 +391,15 @@ contract BaseOwnedSet is Owned,RecentBlockchain {
 	{
 		finalized = false;
 		initiateChange();
+	}
+
+
+	event InitiateChange(bytes32 indexed _parentHash, address[] _newSet);
+
+	function initiateChange(bytes32 parentHash, address[] memory newSet)
+		public	
+	{
+		emit InitiateChange(parentHash, newSet);
 	}
 
 	function initiateChange()

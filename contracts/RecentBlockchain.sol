@@ -51,44 +51,37 @@ contract RecentBlockchain {
 	}
 
 
-	function getCurrentEpoch()
-		public view returns (uint epoch)
+	function getCurrentEpoch() public view returns (uint epoch)
 	{
 		return block.number.div(epochBlocks) + 1;
 	}
 
-    function getEpochByBlock(uint requestedBlock)
-		public view returns (uint epoch)
+    function getEpochByBlock(uint requestedBlock) public view returns (uint epoch)
 	{
 		return requestedBlock.div(epochBlocks) + 1;
 	}
 
-    function getTargetEpoch()
-		public view returns (uint epoch)
+    function getTargetEpoch() public view returns (uint epoch)
 	{
         return getCurrentEpoch() + 1;
 	}
 
-    function getCurrentEpochEnd()
-    public view returns (uint epoch)
+    function getCurrentEpochEnd() public view returns (uint epoch)
 	{
 		return getCurrentEpoch().mul(epochBlocks);
 	}
 
-    function getCurrentValidatorsElectionEnd()
-    public view returns (uint epoch)
+    function getCurrentValidatorsElectionEnd() public view returns (uint epoch)
 	{
 		return getCurrentEpochEnd().sub(blocksBeforeValidatorElectionAllowed);
 	}
 
-    function getCurrentRelayersElectionEnd()
-    public view returns (uint epoch)
+    function getCurrentRelayersElectionEnd() public view returns (uint epoch)
 	{
 		return getCurrentEpochEnd().sub(blocksBeforeRelayersElectionAllowed);
 	}
 
-    function getFundRequiredForRelayer(uint maxUsers, uint256 maxCoins, uint maxTxThroughputPer100000Blocks)
-    public pure returns (uint256 requiredAmount)
+    function getFundRequiredForRelayer(uint maxUsers, uint256 maxCoins, uint maxTxThroughputPer100000Blocks) public pure returns (uint256 requiredAmount)
 	{
         if (maxUsers <= 1000) {
 
