@@ -30,9 +30,9 @@ contract RecentBlockReward is BlockReward, RecentBlockchain {
 		_;
 	}
 
-	constructor (address _systemAddress) public {
+	constructor () public {
 		/* systemAddress = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE; */
-		systemAddress = _systemAddress;
+		systemAddress = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE;
 	}
 
 

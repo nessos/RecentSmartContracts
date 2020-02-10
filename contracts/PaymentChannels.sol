@@ -167,7 +167,8 @@ contract PaymentChannels is RecentBlockchain {
   */
   function requestRelayerLicense(uint targetEpoch, string memory domain, string memory name, uint fee, uint maxUsers, uint256 maxCoins, uint maxTxThroughput, uint offchainTxDelay) public payable {
     if (targetEpoch > 1) {
-      require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
+      require(block.number < getCurrentRelayersElectionEnd(), "Relayers election period has passed");
+      require(targetEpoch > getCurrentEpoch(), "Target epoch should be greater than current");
     }
 
     uint256 requiredAmount = getFundRequiredForRelayer(maxUsers, maxCoins, maxTxThroughput);

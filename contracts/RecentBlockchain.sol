@@ -83,6 +83,7 @@ contract RecentBlockchain {
 
     function getFundRequiredForRelayer(uint maxUsers, uint256 maxCoins, uint maxTxThroughputPer100000Blocks) public pure returns (uint256 requiredAmount)
 	{
+       
         if (maxUsers <= 1000) {
 
             requiredAmount += maxUsers.mul(100 * 1 ether);
@@ -166,8 +167,8 @@ contract RecentBlockchain {
             }
         }
 
-        //Remove divide
-        return requiredAmount.div(100000);
+        // //Remove divide
+        // return requiredAmount.div(100000);
 	}
 
 }
