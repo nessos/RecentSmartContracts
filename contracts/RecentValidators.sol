@@ -29,6 +29,7 @@ import "./RecentBlockchain.sol";
 
 
 contract RecentValidators is RecentBlockchain {
+	
 
 	constructor(address[] memory initial) public
 	{
@@ -62,6 +63,9 @@ contract RecentValidators is RecentBlockchain {
 	// Current list of addresses entitled to participate in the consensus.
 	mapping(uint=> address[]) public validators;
 	//mapping(uint=> address[]) public pending;
+
+	mapping(uint=> address[]) public candidates;
+
 	mapping(uint=>mapping(address  => AddressStatus)) public status;
 
 	mapping(uint=> mapping(address=> uint256)) public validatorTotalStakingFunds;
@@ -70,6 +74,8 @@ contract RecentValidators is RecentBlockchain {
 
 	mapping(uint=> mapping(address=> uint256)) public validatorWitnessesFunds;
 
+
+	mapping(uint=> mapping(address=> uint256)) public validatorFreeMbs;
 
 	mapping(uint=> mapping(address=> uint256)) public validatorTotalWitnessesFunds;
 
@@ -134,10 +140,36 @@ contract RecentValidators is RecentBlockchain {
 	event ValidatorVotedByServiceProvider(uint indexed epoch, address indexed validator, address indexed serviceProvider, uint256 amount);
 
 
-	
+	function getCandidates(uint epoch)
+		public
+		view
+		returns (address[] memory)
+	{
+		return candidates[epoch];
+	}
 
-	function validatorVoted(uint epoch, uint256 amount, address payable validator) private {
+	function getValidatorFreeServiceProviders(uint epoch, address candidate)
+		public
+		view
+		returns (address[] memory)
+	{
+		return validatorFreeServiceProviders[epoch][candidate];
+	}
+
+	function getValidatorWitnesses(uint epoch, address candidate)
+		public
+		view
+		returns (address[] memory)
+	{
+		return validatorWitnesses[epoch][candidate];
+	}
+
+	function validatorVoted(uint epoch, uint256 amount, address payable validator, uint256 freeMbs) private {
+		if (validatorTotalStakingFunds[epoch][validator] == 0) {
+			candidates[epoch].push(validator);
+		}
 		validatorTotalStakingFunds[epoch][validator] += amount;
+		validatorFreeMbs[epoch][validator] += freeMbs;
 		if (!status[epoch][validator].isIn) {
 			if (validators[epoch].length < maximumValidatorsNumber) {
 				validators[epoch].push(validator);
@@ -170,28 +202,28 @@ contract RecentValidators is RecentBlockchain {
 
 		validatorStakingFunds[epoch][msg.sender] += stakingFunds;
 		validatorWitnessesFunds[epoch][msg.sender] += witnessesFunds;
-		validatorVoted(epoch, msg.value, msg.sender);
+		validatorVoted(epoch, msg.value, msg.sender, 0);
 		emit ValidatorProposed(epoch, msg.sender, stakingFunds, witnessesFunds);
 	}
 
 	function voteValidatorAsWitness(address payable validator) public payable {
 		uint epoch = getCurrentEpoch() + 1;
 		require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
-		require(validatorStakingFunds[epoch][msg.sender] > 0, "Validator not found");
+		require(validatorStakingFunds[epoch][validator] > 0, "Validator not found");
 		require(msg.sender.balance.mulByFraction(witnessRequiredBalancePercent,100) <= msg.value, "Invalid address balance");
 		if (witnessStakingFundsForValidator[epoch][msg.sender][validator] == 0) {
 			validatorWitnesses[epoch][validator].push(msg.sender);
 		}
 		witnessStakingFundsForValidator[epoch][msg.sender][validator] += msg.value;
 		validatorTotalWitnessesFunds[epoch][validator] += msg.value;
-		validatorVoted(epoch, msg.value, validator);
+		validatorVoted(epoch, msg.value, validator, 0);
 		emit ValidatorVotedByWitness(epoch, validator, msg.sender, msg.value);
 	}
 
-	function voteValidatorAsServiceProvider(address payable validator, uint freeContentInMb) public payable {
+	function voteValidatorAsServiceProvider(address payable validator, uint256 freeContentInMb) public payable {
 		uint epoch = getCurrentEpoch() + 1;
 		require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
-		require(validatorStakingFunds[epoch][msg.sender] > 0, "Validator not found");
+		require(validatorStakingFunds[epoch][validator] > 0, "Validator not found");
 		require(freeContentInMb.mul(pricePerMb) == msg.value, "Transfered amount should be freeContentInMb * pricePerMb");
 		if (freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] == 0) {
 			validatorFreeServiceProviders[epoch][validator].push(msg.sender);
@@ -199,7 +231,7 @@ contract RecentValidators is RecentBlockchain {
 		freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] += msg.value;
 		freeServiceProvidersFreeMbs[epoch][msg.sender][validator] += freeContentInMb;
 
-		validatorVoted(epoch, msg.value, validator);
+		validatorVoted(epoch, msg.value, validator, freeContentInMb);
 		emit ValidatorVotedByServiceProvider(epoch, validator, msg.sender, msg.value);
 	}
 
@@ -273,6 +305,90 @@ contract RecentValidators is RecentBlockchain {
 		emit FreeServiceProviderRefunded(epoch, msg.sender, validator, amount);	
 	}
 
+	mapping(uint=> mapping(address=> mapping(address => mapping(address => uint256)))) public freeMbClaimedPerValidatorFreeserviceProviderWitness; 
+	mapping(uint=> mapping(address=> mapping(address => mapping(address => bool)))) public freeMbDisputedPerValidatorFreeserviceProviderWitness;
+	mapping(uint=> mapping(address=> mapping(address => mapping(address => uint)))) public freeMbDisputedEndsPerValidatorFreeserviceProviderWitness;
+	mapping(uint=> mapping(address=> mapping(address => mapping(address => bool)))) public freeMbDisputedCanceledDueProofGivenPerValidatorFreeserviceProviderWitness;
+
+	event FreeServiceProviderFreeMbDisputed(uint indexed epoch, address indexed witness, address indexed validator, address freeServiceProvider, uint256 freeMb);
+
+	function startDispute(uint epoch, address validator, address freeServiceProvider, uint256 freeMb) public {
+		uint currentEpoch = getCurrentEpoch();
+		require(currentEpoch  >= epoch, "Current epoch should be greater or equal than requested");
+		require(freeMbClaimedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender]==0, "Already claimed");
+		require(!freeMbDisputedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender], "Already disputed");
+		
+		require(status[epoch][validator].isIn, "Not a validator");
+		require(witnessStakingFundsForValidator[epoch][msg.sender][validator] > 0, "Not a witness for validator");
+		require(freeServiceProvidersFundsForValidator[epoch][freeServiceProvider][validator] > 0, "Not a free service provider for validator");
+		uint freeMbAvailablePerWitness = freeServiceProvidersFreeMbs[epoch][freeServiceProvider][validator].div(validatorWitnesses[epoch][validator].length);
+		require(freeMbAvailablePerWitness == freeMb, "Invalid freeMb");
+		freeMbDisputedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender] = true;
+		freeMbDisputedEndsPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender] = block.number + freeServiceDisputeThreshold;
+		emit FreeServiceProviderFreeMbDisputed(epoch, msg.sender, validator, freeServiceProvider, freeMb);	
+	}
+
+	event FreeServiceProviderFreeMbDisputeFinished(uint indexed epoch, address indexed witness, address indexed validator, address freeServiceProvider, uint256 amount);
+
+	function requestDisputedFunds(uint epoch, address validator, address freeServiceProvider) public {
+		require(freeMbClaimedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender]==0, "Already claimed");
+		require(freeMbDisputedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender], "Not disputed");
+		require(!freeMbDisputedCanceledDueProofGivenPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender], "Unable to refund, proof provided");
+		require(freeMbDisputedEndsPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender] < block.number, "Request disputed funds not currently available");		
+		uint freeMbAvailablePerWitness = freeServiceProvidersFreeMbs[epoch][freeServiceProvider][validator].div(validatorWitnesses[epoch][validator].length);
+		uint amount = freeMbAvailablePerWitness.mul(pricePerMb);		
+		//Should not happen
+		require(freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] >= amount, "No remaining funds");
+
+		freeMbClaimedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender] = amount;
+		msg.sender.transfer(amount);
+		emit FreeServiceProviderFreeMbDisputeFinished(epoch, msg.sender, validator, freeServiceProvider, amount);	
+	}
+
+
+	function checkFreeServiceProof(
+		bytes32 h,
+		uint8   v,
+		bytes32 r,
+		bytes32 s,
+		uint epoch,
+		address beneficiary,
+		address validator,
+		uint256 freeMb) public pure returns (address signer)
+	{
+		bytes32 proof = keccak256(abi.encodePacked( beneficiary, validator, epoch, freeMb));
+		require(proof == h, "Off-chain transaction hash does't match with payload");
+		signer = ecrecover(h, v, r, s);
+
+		return signer;
+	}
+
+	event FreeServiceProviderFreeMbDisputeCanceled(uint indexed epoch, address indexed witness, address indexed validator, address freeServiceProvider, uint256 freeMb);
+
+	function cancelDisputeByProvideProof(
+		bytes32 h,
+		uint8   v,
+		bytes32 r,
+		bytes32 s,
+		uint epoch,
+		address beneficiary,
+		address validator,
+		uint256 freeMb) public
+	{
+
+		
+		address freeServiceProvider = checkFreeServiceProof(h, v, r, s, epoch, beneficiary, validator, freeMb );
+
+		require(freeMbDisputedEndsPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender] >= block.number, "Cancelation not allowed");
+		require(freeMbDisputedPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender], "Not disputed");
+		require(!freeMbDisputedCanceledDueProofGivenPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender], "Proof already provided");
+		uint freeMbAvailablePerWitness = freeServiceProvidersFreeMbs[epoch][freeServiceProvider][validator].div(validatorWitnesses[epoch][validator].length);
+		require(freeMbAvailablePerWitness == freeMb, "Invalid freeMb");
+
+		freeMbDisputedCanceledDueProofGivenPerValidatorFreeserviceProviderWitness[epoch][validator][freeServiceProvider][msg.sender] = true;
+		
+		emit FreeServiceProviderFreeMbDisputeCanceled(epoch, msg.sender, validator, freeServiceProvider, freeMb);   
+	}
 
 	// OWNER FUNCTIONS
 
@@ -310,7 +426,7 @@ contract RecentValidators is RecentBlockchain {
 
 
 	// Called to determine the current set of validators.
-	function getValidators(uint epoch)
+	function getValidatorsByEpoch(uint epoch)
 		public
 		view
 		returns (address[] memory)
@@ -328,7 +444,15 @@ contract RecentValidators is RecentBlockchain {
 		view
 		returns (address[] memory)
 	{
-		return validators[getCurrentEpoch()];
+		return getValidatorsByEpoch(getCurrentEpoch());
+	}
+
+	function getValidatorsNumber(uint epoch)
+		public
+		view
+		returns (uint validatorsNumber)
+	{
+		return getValidatorsByEpoch(epoch).length;
 	}
 
 	// // Called to determine the pending set of validators.
@@ -396,6 +520,23 @@ contract RecentValidators is RecentBlockchain {
 		public	
 	{
 		emit InitiateChange(parentHash, newSet);
+	}
+
+
+	uint lastClaimedIssuanceBlock;
+
+	function reward(address[] memory benefactors, uint16[] memory kind) public view onlySystem returns (address[] memory, uint256[] memory) {
+		require(benefactors.length == kind.length);
+		uint256 calculateRewardValue = calculateReward(block.number, lastClaimedIssuanceBlock);
+		uint256[] memory rewards = new uint256[](benefactors.length);
+		for (uint i = 0; i < benefactors.length; i++) {
+			if (kind[i]==0) {
+				rewards[i] = calculateRewardValue;
+			} else {
+				rewards[i] = 0;
+			}
+		}
+		return (benefactors, rewards);
 	}
 
 }

@@ -7,7 +7,11 @@ contract RecentBlockchain {
     using SafeMath for uint;
 
 
+
     uint public epochBlocks = 1000000;
+    uint public halvingEvery = 2000000;
+
+    
 
     uint public blocksBeforeValidatorElectionAllowed = 10000;
     uint public blocksBeforeRelayersElectionAllowed = 10000;
@@ -25,7 +29,7 @@ contract RecentBlockchain {
     uint256 public maxReward = 10 ether;
     uint256 public minReward = 0.000001 ether;
 
-	uint public halvingEvery = epochBlocks.mul(2);
+	uint public freeServiceDisputeThreshold = 5000;
 
 
 	function calculateReward(uint issuanceBlock, uint lastClaimedIssuanceBlock) public view returns (uint256) {
