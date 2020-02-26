@@ -1,3 +1,9 @@
+ /* 
+RE-Cent OffChain-Transactions/Payment Channels Smart Contract v.1.0.0
+Author: Giannis Zarifis <jzarifis@gmail.com>
+*/
+
+
 pragma solidity ^0.5.0;
 
 import "./RecentBlockchain.sol";

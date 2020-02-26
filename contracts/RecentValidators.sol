@@ -1,27 +1,9 @@
-// Copyright 2018, Parity Technologies Ltd.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+ /* 
+RE-Cent Validators Smart Contract v.1.0.0
+Author: Giannis Zarifis <jzarifis@gmail.com>
 
-// An owned validator set contract where the owner can add or remove validators.
-// This is an abstract contract that provides the base logic for adding/removing
-// validators and provides base implementations for the `ValidatorSet`
-// interface. The base implementations of the misbehavior reporting functions
-// perform validation on the reported and reporter validators according to the
-// currently active validator set. The base implementation of `finalizeChange`
-// validates that there are existing unfinalized changes.
 
-//Remixd: remixd --remix-ide https://remix.ethereum.org -s ./
-//Validator smart contract setup: Deploy RelaySet then RelayedOwnedSet then call SetRealy
+*/
 
 pragma solidity ^0.5.0;
 
@@ -264,7 +246,7 @@ contract RecentValidators is RecentBlockchain {
 		if (status[epoch][validator].isIn) {
 			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
 		} else {
-			require(currentEpoch  > epoch, "Current epoch should be greater than requested");
+			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested");
 		}
 		uint256 amount = witnessStakingFundsForValidator[epoch][msg.sender][validator];
 		witnessStakingFundsForValidator[epoch][msg.sender][validator] = 0;
@@ -280,7 +262,7 @@ contract RecentValidators is RecentBlockchain {
 		if (status[epoch][msg.sender].isIn) {
 			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
 		} else {
-			require(currentEpoch  > epoch, "Current epoch should be greater than requested");
+			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested");
 		}
 		uint256 amount = validatorStakingFunds[epoch][msg.sender];
 		validatorStakingFunds[epoch][msg.sender] = 0;
@@ -297,7 +279,7 @@ contract RecentValidators is RecentBlockchain {
 		if (status[epoch][validator].isIn) {
 			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
 		} else {
-			require(currentEpoch  > epoch, "Current epoch should be greater than requested");
+			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested");
 		}
 		uint256 amount = freeServiceProvidersFundsForValidator[epoch][msg.sender][validator];
 		freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] = 0;
@@ -466,6 +448,12 @@ contract RecentValidators is RecentBlockchain {
 
 	// INTERNAL
 
+
+	mapping (address=>mapping(address=>bool)) benignReported;
+	mapping (address=>mapping(address=>bool)) maliciousReported;
+
+
+
 	// Report that a validator has misbehaved in a benign way.
 	function reportBenign(address validator, uint blockNumber)
 		public
@@ -540,3 +528,6 @@ contract RecentValidators is RecentBlockchain {
 	}
 
 }
+
+
+//Remixd: remixd --remix-ide https://remix.ethereum.org -s ./ --read-only
