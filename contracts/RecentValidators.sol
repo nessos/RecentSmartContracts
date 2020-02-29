@@ -75,10 +75,10 @@ contract RecentValidators is RecentBlockchain {
 
 	modifier isValidator(address addr) {
 		uint epoch = getCurrentEpoch();
-		bool isIn = status[epoch][addr].isIn;
-		uint index = status[epoch][addr].index;
+		// bool isIn = status[epoch][addr].isIn;
+		// uint index = status[epoch][addr].index;
 
-		require(isIn && index < validators[epoch].length && validators[epoch][index] == addr);
+		require(status[epoch][addr].isIn && status[epoch][addr].index < validators[epoch].length && validators[epoch][status[epoch][addr].index] == addr);
 		_;
 	}
 
@@ -146,7 +146,7 @@ contract RecentValidators is RecentBlockchain {
 		return validatorWitnesses[epoch][candidate];
 	}
 
-	function validatorVoted(uint epoch, uint256 amount, address payable validator, uint256 freeMbs) private {
+	function validatorVoted(uint epoch, uint256 amount, address validator, uint256 freeMbs) private {
 		if (validatorTotalStakingFunds[epoch][validator] == 0) {
 			candidates[epoch].push(validator);
 		}
@@ -164,6 +164,7 @@ contract RecentValidators is RecentBlockchain {
 					status[epoch][existingValidator].isIn = false;
 					status[epoch][validator].isIn = true;
 					status[epoch][validator].index = i;
+					validators[epoch][i] = msg.sender;
 					emit ValidatorRemoved(epoch, existingValidator);
 					break;
 				}
@@ -176,11 +177,16 @@ contract RecentValidators is RecentBlockchain {
 
 	}
 
+
+	function getRequiredStakingFunds(uint epoch) public view returns (uint256) {
+		return epochBlocks.mulByFraction(calculateReward(epoch),maximumValidatorsNumber);
+	}
+
 	function validatorAsCandidate(uint256 stakingFunds, uint256 witnessesFunds) public payable {
 		uint epoch = getCurrentEpoch() + 1;
 		require(stakingFunds + witnessesFunds == msg.value, "Transfered amount should be equal to stakingFunds + witnessesFunds");
 		require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
-		require(epochBlocks.mulByFraction(calculateReward(epoch),maximumValidatorsNumber) <= stakingFunds, "Insufficient stakingFunds");
+		require( getRequiredStakingFunds(epoch)<= stakingFunds, "Insufficient stakingFunds");
 
 		validatorStakingFunds[epoch][msg.sender] += stakingFunds;
 		validatorWitnessesFunds[epoch][msg.sender] += witnessesFunds;
@@ -202,7 +208,7 @@ contract RecentValidators is RecentBlockchain {
 		emit ValidatorVotedByWitness(epoch, validator, msg.sender, msg.value);
 	}
 
-	function voteValidatorAsServiceProvider(address payable validator, uint256 freeContentInMb) public payable {
+	function voteValidatorAsServiceProvider(address payable validator, uint freeContentInMb) public payable {
 		uint epoch = getCurrentEpoch() + 1;
 		require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
 		require(validatorStakingFunds[epoch][validator] > 0, "Validator not found");
@@ -449,9 +455,51 @@ contract RecentValidators is RecentBlockchain {
 	// INTERNAL
 
 
-	mapping (address=>mapping(address=>bool)) benignReported;
-	mapping (address=>mapping(address=>bool)) maliciousReported;
+	mapping (uint=>mapping(address=>uint256)) benignReportedByblockNumber;
+	mapping (uint=>mapping(address=>uint256)) maliciousReportedByblockNumber;
 
+
+	function getNumberOfSetBits(uint256 n) public pure returns (uint result){
+        uint256 count = 0; 
+        while (n > 0) 
+        { 
+            count += n & 1; 
+            n >>= 1; 
+        } 
+        return count; 
+    }
+
+	event ValidatorReplaced(uint indexed epoch, address indexed oldValidator, address indexed newValidator);
+
+	function replaceValidator(address validator) public
+			isValidator(validator)
+	{
+			uint epoch = getCurrentEpoch();
+			require(validatorStakingFunds[epoch][validator] ==0,"Validator cannot be replaced");
+			require(validatorStakingFunds[epoch][msg.sender] > 0,"Request not from valid candidate");
+			require(!status[epoch][msg.sender].isIn,"Already a validator");
+
+			validators[epoch][status[epoch][validator].index] = msg.sender;
+			status[epoch][validator].isIn = false;
+			status[epoch][msg.sender].isIn = true;
+			status[epoch][msg.sender].index = status[epoch][validator].index;
+			uint totalValidatorsNumber = validators[epoch].length;
+			uint256 penaltyShare = validatorTotalWitnessesFunds[epoch][validator].mulByFraction(1,totalValidatorsNumber - 1);
+			if (penaltyShare > 0) {
+				for (uint i=0; i < validatorWitnesses[epoch][validator].length; i++) {
+					witnessStakingFundsForValidator[epoch][validatorWitnesses[epoch][validator][i]][validator] = 0;
+					validatorTotalWitnessesFunds[epoch][validator]=0;					
+				}
+
+				for (uint i=0; i < validators[epoch].length; i++) {
+					if (validators[epoch][i] != validator) {
+						address(uint160(validators[epoch][i])).transfer(penaltyShare);
+					}
+					
+				}
+			}
+			emit ValidatorReplaced(epoch, validator, msg.sender);
+	}
 
 
 	// Report that a validator has misbehaved in a benign way.
@@ -461,6 +509,31 @@ contract RecentValidators is RecentBlockchain {
 		isValidator(validator)
 		isRecent(blockNumber)
 	{
+		uint epoch = getCurrentEpoch();
+		uint totalValidatorsNumber = validators[epoch].length;
+		uint index = status[epoch][msg.sender].index;
+		benignReportedByblockNumber[blockNumber][validator] = benignReportedByblockNumber[blockNumber][validator] | (2 ** index);
+		uint setBits = getNumberOfSetBits(benignReportedByblockNumber[blockNumber][validator]);
+		if (setBits >= totalValidatorsNumber.mulByFraction(50,100)) {
+			uint256 penalty = calculateReward(epoch);
+			if (validatorStakingFunds[epoch][validator] < penalty) {
+				penalty = validatorStakingFunds[epoch][validator] ;
+			}
+			if (penalty > 0) {
+				validatorStakingFunds[epoch][validator] -= penalty;
+				validatorTotalStakingFunds[epoch][validator] -= penalty;
+				benignReportedByblockNumber[blockNumber][validator] = 0;
+				uint256 penaltyShare = penalty.mulByFraction(1,totalValidatorsNumber - 1);
+				for (uint i=0; i < validators[epoch].length; i++) {
+					if (validators[epoch][i] != validator) {
+						address(uint160(validators[epoch][i])).transfer(penaltyShare);
+					}
+					
+				}
+			}
+			 
+		}
+		
 		emit Report(msg.sender, validator, false);
 	}
 
@@ -477,6 +550,30 @@ contract RecentValidators is RecentBlockchain {
 		isValidator(validator)
 		isRecent(blockNumber)
 	{
+		
+		uint epoch = getCurrentEpoch();
+		uint totalValidatorsNumber = validators[epoch].length;
+		uint index = status[epoch][msg.sender].index;
+		maliciousReportedByblockNumber[blockNumber][validator] = maliciousReportedByblockNumber[blockNumber][validator] | (2 ** index);
+		uint setBits = getNumberOfSetBits(maliciousReportedByblockNumber[blockNumber][validator]);
+		if (setBits >= totalValidatorsNumber.mulByFraction(50,100)) {
+			uint256 penalty = validatorStakingFunds[epoch][validator];
+			if (penalty > 0) {
+				validatorStakingFunds[epoch][validator] -= penalty;
+				validatorTotalStakingFunds[epoch][validator] -= penalty;
+				maliciousReportedByblockNumber[blockNumber][validator] = 0;
+				uint256 penaltyShare = penalty.mulByFraction(1,totalValidatorsNumber - 1);
+				for (uint i=0; i < validators[epoch].length; i++) {
+					if (validators[epoch][i] != validator) {
+						address(uint160(validators[epoch][i])).transfer(penaltyShare);
+					}
+					
+				}
+			}
+			 
+		}
+		
+		
 		proofs[msg.sender][validator][blockNumber] = proof;
 		emit Report(msg.sender, validator, true);
 	}
