@@ -182,17 +182,27 @@ contract RecentValidators is RecentBlockchain {
 		return epochBlocks.mulByFraction(calculateReward(epoch),maximumValidatorsNumber);
 	}
 
+
+	mapping (uint=>uint) public benignPercent;
+
+	mapping (uint=>uint256) public epochReward;
+
 	function validatorAsCandidate(uint256 stakingFunds, uint256 witnessesFunds) public payable {
 		uint epoch = getCurrentEpoch() + 1;
 		require(stakingFunds + witnessesFunds == msg.value, "Transfered amount should be equal to stakingFunds + witnessesFunds");
 		require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
-		require( getRequiredStakingFunds(epoch)<= stakingFunds, "Insufficient stakingFunds");
+		uint256 requiredStaking = getRequiredStakingFunds(epoch);
+		epochReward[epoch] = calculateReward(epoch);
+		benignPercent[epoch] =  epochReward[epoch].mul(100).div(requiredStaking);
+		require(requiredStaking == stakingFunds, "Insufficient stakingFunds");
 
 		validatorStakingFunds[epoch][msg.sender] += stakingFunds;
 		validatorWitnessesFunds[epoch][msg.sender] += witnessesFunds;
 		validatorVoted(epoch, msg.value, msg.sender, 0);
 		emit ValidatorProposed(epoch, msg.sender, stakingFunds, witnessesFunds);
 	}
+
+	mapping (uint => mapping (address=>uint)) public benignPercentPenaltyForWitnesses;
 
 	function voteValidatorAsWitness(address payable validator) public payable {
 		uint epoch = getCurrentEpoch() + 1;
@@ -204,6 +214,7 @@ contract RecentValidators is RecentBlockchain {
 		}
 		witnessStakingFundsForValidator[epoch][msg.sender][validator] += msg.value;
 		validatorTotalWitnessesFunds[epoch][validator] += msg.value;
+		benignPercentPenaltyForWitnesses[epoch][validator] = validatorTotalWitnessesFunds[epoch][validator].mulByFraction(benignPercent[epoch],100);
 		validatorVoted(epoch, msg.value, validator, 0);
 		emit ValidatorVotedByWitness(epoch, validator, msg.sender, msg.value);
 	}
@@ -232,7 +243,7 @@ contract RecentValidators is RecentBlockchain {
 
 	function witnessPaymentRequest(uint epoch, address validator) public {
 		uint currentEpoch = getCurrentEpoch();
-		require(currentEpoch  > epoch , "Current epoch should be greater than requested");
+		require(currentEpoch  >= epoch , "Current epoch should be greater or equal than the requested");
 		require(witnessStakingFundsForValidator[epoch][msg.sender][validator] > 0, "Not a valid witness");
 		require(validatorWitnessPaidAmount[epoch][msg.sender][validator] == 0, "Already paid");
 		require(status[epoch][validator].isIn, "Validator not found");
@@ -249,12 +260,9 @@ contract RecentValidators is RecentBlockchain {
 	function witnessWithdrawRequest(uint epoch, address validator) public {
 		uint currentEpoch = getCurrentEpoch();
 		require(witnessStakingFundsForValidator[epoch][msg.sender][validator] > 0, "No remaining funds");
-		if (status[epoch][validator].isIn) {
-			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
-		} else {
-			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested");
-		}
-		uint256 amount = witnessStakingFundsForValidator[epoch][msg.sender][validator];
+		require(currentEpoch  > epoch, "Current epoch should be greater than requested + 1");
+		uint percentAvailable = (100 - penaltyPercent[epoch][validator]);
+		uint256 amount = witnessStakingFundsForValidator[epoch][msg.sender][validator].mulByFraction(percentAvailable, 100);
 		witnessStakingFundsForValidator[epoch][msg.sender][validator] = 0;
 		msg.sender.transfer(amount);
 		emit WitnessRefunded(epoch, msg.sender, validator, amount);	
@@ -265,11 +273,7 @@ contract RecentValidators is RecentBlockchain {
 	function validatorWithdrawRequest(uint epoch) public {
 		uint currentEpoch = getCurrentEpoch();
 		require(validatorStakingFunds[epoch][msg.sender]> 0, "No remaining funds");
-		if (status[epoch][msg.sender].isIn) {
-			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
-		} else {
-			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested");
-		}
+		require(currentEpoch  > epoch, "Current epoch should be greater than requested + 1");
 		uint256 amount = validatorStakingFunds[epoch][msg.sender];
 		validatorStakingFunds[epoch][msg.sender] = 0;
 		msg.sender.transfer(amount);
@@ -282,11 +286,7 @@ contract RecentValidators is RecentBlockchain {
 	function freeServiceProviderWithdrawRequest(uint epoch, address validator) public {
 		uint currentEpoch = getCurrentEpoch();
 		require(freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] > 0, "No remaining funds");
-		if (status[epoch][validator].isIn) {
-			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested + 1");
-		} else {
-			require(currentEpoch  > epoch + 1, "Current epoch should be greater than requested");
-		}
+		require(currentEpoch  > epoch, "Current epoch should be greater than requested + 1");
 		uint256 amount = freeServiceProvidersFundsForValidator[epoch][msg.sender][validator];
 		freeServiceProvidersFundsForValidator[epoch][msg.sender][validator] = 0;
 		msg.sender.transfer(amount);
@@ -469,35 +469,23 @@ contract RecentValidators is RecentBlockchain {
         return count; 
     }
 
+	mapping (uint=>mapping(address=>uint)) penaltyPercent;
+
+
 	event ValidatorReplaced(uint indexed epoch, address indexed oldValidator, address indexed newValidator);
 
 	function replaceValidator(address validator) public
 			isValidator(validator)
 	{
 			uint epoch = getCurrentEpoch();
-			require(validatorStakingFunds[epoch][validator] ==0,"Validator cannot be replaced");
-			require(validatorStakingFunds[epoch][msg.sender] > 0,"Request not from valid candidate");
+			require(validatorStakingFunds[epoch][msg.sender] > validatorStakingFunds[epoch][validator],"Cannot be replaced");
 			require(!status[epoch][msg.sender].isIn,"Already a validator");
 
 			validators[epoch][status[epoch][validator].index] = msg.sender;
 			status[epoch][validator].isIn = false;
 			status[epoch][msg.sender].isIn = true;
 			status[epoch][msg.sender].index = status[epoch][validator].index;
-			uint totalValidatorsNumber = validators[epoch].length;
-			uint256 penaltyShare = validatorTotalWitnessesFunds[epoch][validator].mulByFraction(1,totalValidatorsNumber - 1);
-			if (penaltyShare > 0) {
-				for (uint i=0; i < validatorWitnesses[epoch][validator].length; i++) {
-					witnessStakingFundsForValidator[epoch][validatorWitnesses[epoch][validator][i]][validator] = 0;
-					validatorTotalWitnessesFunds[epoch][validator]=0;					
-				}
 
-				for (uint i=0; i < validators[epoch].length; i++) {
-					if (validators[epoch][i] != validator) {
-						address(uint160(validators[epoch][i])).transfer(penaltyShare);
-					}
-					
-				}
-			}
 			emit ValidatorReplaced(epoch, validator, msg.sender);
 	}
 
@@ -510,20 +498,32 @@ contract RecentValidators is RecentBlockchain {
 		isRecent(blockNumber)
 	{
 		uint epoch = getCurrentEpoch();
+		if (validatorStakingFunds[epoch][validator] == 0 )
+		{
+			return;
+		}
+
 		uint totalValidatorsNumber = validators[epoch].length;
-		uint index = status[epoch][msg.sender].index;
-		benignReportedByblockNumber[blockNumber][validator] = benignReportedByblockNumber[blockNumber][validator] | (2 ** index);
+		benignReportedByblockNumber[blockNumber][validator] = benignReportedByblockNumber[blockNumber][validator] | (2 ** status[epoch][msg.sender].index);
 		uint setBits = getNumberOfSetBits(benignReportedByblockNumber[blockNumber][validator]);
 		if (setBits >= totalValidatorsNumber.mulByFraction(50,100)) {
-			uint256 penalty = calculateReward(epoch);
+			benignReportedByblockNumber[blockNumber][validator] = 0;
+			uint256 penalty = epochReward[epoch];
+			
+			penaltyPercent[epoch][validator] += benignPercent[epoch];
+
 			if (validatorStakingFunds[epoch][validator] < penalty) {
 				penalty = validatorStakingFunds[epoch][validator] ;
 			}
-			if (penalty > 0) {
-				validatorStakingFunds[epoch][validator] -= penalty;
-				validatorTotalStakingFunds[epoch][validator] -= penalty;
-				benignReportedByblockNumber[blockNumber][validator] = 0;
-				uint256 penaltyShare = penalty.mulByFraction(1,totalValidatorsNumber - 1);
+			validatorStakingFunds[epoch][validator] -= penalty;
+			validatorTotalStakingFunds[epoch][validator] -= penalty;
+
+			uint256 penaltyFromWitnesses = benignPercentPenaltyForWitnesses[epoch][validator];
+			validatorTotalStakingFunds[epoch][validator] -= penaltyFromWitnesses;
+			validatorTotalWitnessesFunds[epoch][validator] -= penaltyFromWitnesses;
+			uint256 penaltyShare = (penalty + penaltyFromWitnesses).mulByFraction(1, totalValidatorsNumber - 1);
+			if (penaltyShare> 0) {
+				
 				for (uint i=0; i < validators[epoch].length; i++) {
 					if (validators[epoch][i] != validator) {
 						address(uint160(validators[epoch][i])).transfer(penaltyShare);
@@ -549,20 +549,27 @@ contract RecentValidators is RecentBlockchain {
 		isValidator(msg.sender)
 		isValidator(validator)
 		isRecent(blockNumber)
-	{
-		
+	{		
 		uint epoch = getCurrentEpoch();
+		if (validatorStakingFunds[epoch][validator] == 0 )
+		{
+			return;
+		}
 		uint totalValidatorsNumber = validators[epoch].length;
-		uint index = status[epoch][msg.sender].index;
-		maliciousReportedByblockNumber[blockNumber][validator] = maliciousReportedByblockNumber[blockNumber][validator] | (2 ** index);
+		maliciousReportedByblockNumber[blockNumber][validator] = maliciousReportedByblockNumber[blockNumber][validator] | (2 ** status[epoch][msg.sender].index);
 		uint setBits = getNumberOfSetBits(maliciousReportedByblockNumber[blockNumber][validator]);
 		if (setBits >= totalValidatorsNumber.mulByFraction(50,100)) {
-			uint256 penalty = validatorStakingFunds[epoch][validator];
-			if (penalty > 0) {
-				validatorStakingFunds[epoch][validator] -= penalty;
-				validatorTotalStakingFunds[epoch][validator] -= penalty;
-				maliciousReportedByblockNumber[blockNumber][validator] = 0;
-				uint256 penaltyShare = penalty.mulByFraction(1,totalValidatorsNumber - 1);
+			maliciousReportedByblockNumber[blockNumber][validator] = 0;
+			uint256 penalty = validatorStakingFunds[epoch][validator];			
+			penaltyPercent[epoch][validator] = 100;
+			validatorStakingFunds[epoch][validator] = 0;
+			validatorTotalStakingFunds[epoch][validator] -= penalty;
+
+			uint256 penaltyFromWitnesses = validatorTotalWitnessesFunds[epoch][validator] ;
+			validatorTotalStakingFunds[epoch][validator] -= penaltyFromWitnesses;
+			validatorTotalWitnessesFunds[epoch][validator] = 0;
+			uint256 penaltyShare = (penalty + penaltyFromWitnesses).mulByFraction(1, totalValidatorsNumber - 1);
+			if (penaltyShare > 0) {			
 				for (uint i=0; i < validators[epoch].length; i++) {
 					if (validators[epoch][i] != validator) {
 						address(uint160(validators[epoch][i])).transfer(penaltyShare);
