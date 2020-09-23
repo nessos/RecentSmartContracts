@@ -1,7 +1,13 @@
+/* 
+RE-Cent Block reward Smart Contract v.1.0.0
+Author: Giannis Zarifis <jzarifis@gmail.com>
+*/
+
 pragma solidity ^0.5.0;
 
 import "./BlockReward.sol";
 import "./RecentBlockchain.sol";
+
 
 contract RecentBlockReward is BlockReward, RecentBlockchain {
 	address systemAddress;

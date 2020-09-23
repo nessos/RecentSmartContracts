@@ -1,8 +1,6 @@
- /* 
+/* 
 RE-Cent Validators Smart Contract v.1.0.0
 Author: Giannis Zarifis <jzarifis@gmail.com>
-
-
 */
 
 pragma solidity ^0.5.0;
@@ -208,7 +206,7 @@ contract RecentValidators is RecentBlockchain {
 		uint epoch = getCurrentEpoch() + 1;
 		require(block.number < getCurrentValidatorsElectionEnd(), "Relayers election period has passed");
 		require(validatorStakingFunds[epoch][validator] > 0, "Validator not found");
-		require(msg.sender.balance.mulByFraction(witnessRequiredBalancePercent,100) <= msg.value, "Invalid address balance");
+		require(msg.sender.balance.mulByFraction(witnessRequiredBalancePercent,100) <= msg.value, "Invalid Witness balance. SHould be less than witnessRequiredBalancePercent");
 		if (witnessStakingFundsForValidator[epoch][msg.sender][validator] == 0) {
 			validatorWitnesses[epoch][validator].push(msg.sender);
 		}
@@ -633,5 +631,3 @@ contract RecentValidators is RecentBlockchain {
 
 }
 
-
-//Remixd: remixd --remix-ide https://remix.ethereum.org -s ./ --read-only
