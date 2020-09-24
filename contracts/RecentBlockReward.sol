@@ -8,10 +8,12 @@ pragma solidity ^0.5.0;
 import "./BlockReward.sol";
 import "./RecentBlockchain.sol";
 
-
+//Smart contract that produce rewards when a new Block is mined by Validators
 contract RecentBlockReward is BlockReward, RecentBlockchain {
+	//System address allowed to call reward method
 	address systemAddress;
 
+	//Last mined Block that produced rewards
 	uint lastClaimedIssuanceBlock;
 
 
@@ -21,7 +23,6 @@ contract RecentBlockReward is BlockReward, RecentBlockchain {
 	}
 
 	constructor () public {
-		/* systemAddress = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE; */
 		systemAddress = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE;
 	}
 
@@ -31,8 +32,11 @@ contract RecentBlockReward is BlockReward, RecentBlockchain {
 	// only callable by `SYSTEM_ADDRESS`
 	function reward(address[] calldata benefactors, uint16[] calldata kind) external onlySystem returns (address[] memory, uint256[] memory) {
 		require(benefactors.length == kind.length);
+		//Calculate the reward
 		uint256 calculateRewardValue = calculateReward(block.number, lastClaimedIssuanceBlock);
 		uint256[] memory rewards = new uint256[](benefactors.length);
+
+		//Iterate and produce Reward only for Miners
 		for (uint i = 0; i < benefactors.length; i++) {
 			if (kind[i]==0) {
 				rewards[i] = calculateRewardValue;
