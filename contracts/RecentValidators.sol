@@ -807,7 +807,7 @@ contract RecentValidators is RecentBlockchain {
         uint8 v,
         bytes32 r,
         bytes32 s,
-        uint256 epoch,
+        uint epoch,
         address freeServiceProvider,
         address validator,
         uint256 freeMb

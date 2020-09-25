@@ -251,15 +251,15 @@ contract PaymentChannels is RecentBlockchain {
         uint256 maxUsers;
         //Max allowed number of Coins(Deposits) based on requested Relayer license
         uint256 maxCoins;
-        //Max allowed Offcain transactions throughput based on requested Relayer license
+        //Max allowed Offcain transactions throughput per 100000 Blocks based on requested Relayer license
         uint256 maxTxThroughput;
         //Current number of Peers(Depositors)
         uint256 currentUsers;
         //Current deposited Coins
         uint256 currentCoins;
-        //Current used Offcain transactions throughput
+        //Current used Offcain transactions throughput per 100000 Blocks
         uint256 currentTxThroughput;
-        //Delay of expected Offchain transaction settlement in number of Blocks
+        //Excepted Delay of an Offchain transaction settlement in number of Blocks
         uint256 offchainTxDelay;
         //Relayer fee(Thousands percent)
         uint256 fee;
