@@ -73,7 +73,7 @@ contract RecentValidators is RecentBlockchain {
     mapping(uint256 => mapping(address => uint256))
         public validatorTotalWitnessesFunds;
 
-    //Funds locked by a Witness for and Validator and Epoch
+    //Funds locked by a Witness for  Validator and Epoch
     mapping(uint256 => mapping(address => mapping(address => uint256)))
         public witnessStakingFundsForValidator;
 
