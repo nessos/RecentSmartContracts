@@ -590,7 +590,7 @@ contract PaymentChannels is RecentBlockchain {
         } else {
             //Check that new lock until value is greater or equal than existing
             require(
-                userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock >=
+                userDepositOnRelayer[msg.sender][relayerId].lockUntilBlock <=
                     lockUntilBlock,
                 "The lockTimeInDays should be greater than any previous lock until Block"
             );
