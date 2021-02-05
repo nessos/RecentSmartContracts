@@ -19,7 +19,7 @@ module.exports = {
     recent: {
       provider: () => new HDWalletProvider("combine close before lawsuit asthma glimpse yard debate mixture stool adjust ride", "http://ec2-3-124-182-37.eu-central-1.compute.amazonaws.com:8545"),
       from: "0x3d176d013550b48974c1d2f0b18c6df1ff71391e",
-      network_id: "12858956",
+      network_id: "12858955",
       host: 'http://ec2-3-124-182-37.eu-central-1.compute.amazonaws.com',
       port: 8545,
       gasPrice: 1000000000,
